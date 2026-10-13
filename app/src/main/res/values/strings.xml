@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">MemoryVoid</string>
+    <string name="search_hint">Search memories…</string>
+    <string name="play_audio">Play audio</string>
+    <string name="close_menu">Close menu</string>
+    <string name="made_by">Made by Dhruv Pitroda</string>
+    <string name="permissions">Permissions</string>
+    <string name="how_to_use">How to Use</string>
+    <string name="theme">Theme</string>
+    <string name="mic_permission">Microphone</string>
+</resources>

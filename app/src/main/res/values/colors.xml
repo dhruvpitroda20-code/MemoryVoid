@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Google Material 3 Light Colors: High contrast stepped shades -->
+    <color name="m3_light_background">#F2F4F7</color>
+    <color name="m3_light_surface">#FFFFFF</color>
+    <color name="m3_light_surface_container">#E8ECF2</color>
+    <color name="m3_light_surface_container_high">#DDE3EC</color>
+    <color name="m3_light_on_surface">#121316</color>
+    <color name="m3_light_on_surface_variant">#5C6270</color>
+    <color name="m3_light_outline">#D0D5DD</color>
+
+    <!-- Google Material 3 Dark Colors: Deep subtle layered tones -->
+    <color name="m3_dark_background">#101216</color>
+    <color name="m3_dark_surface">#181B22</color>
+    <color name="m3_dark_surface_container">#222630</color>
+    <color name="m3_dark_surface_container_high">#2D323E</color>
+    <color name="m3_dark_on_surface">#F0F2F5</color>
+    <color name="m3_dark_on_surface_variant">#98A2B3</color>
+    <color name="m3_dark_outline">#343844</color>
+
+    <!-- Gemini Ambient Mesh Colors (Light) -->
+    <color name="gemini_bg_start">#F2F6FC</color>
+    <color name="gemini_bg_center">#E6E6FA</color>
+    <color name="gemini_bg_end">#FFF0F5</color>
+
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+    <color name="grey_light">#F2F2F2</color>
+    <color name="grey_dark">#1A1A1A</color>
+    <color name="grey_text">#888888</color>
+    <color name="surface_color_light">#FFFFFF</color>
+    <color name="surface_color_dark">#000000</color>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Gemini Ambient Mesh Colors (Dark) -->
+    <color name="gemini_bg_start">#10151E</color>
+    <color name="gemini_bg_center">#1A162B</color>
+    <color name="gemini_bg_end">#121212</color>
+</resources>

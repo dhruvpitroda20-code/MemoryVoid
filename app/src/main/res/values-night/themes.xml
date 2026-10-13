@@ -1,0 +1,21 @@
+<resources>
+    <style name="Theme.EssentialSpace" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+
+        <!-- Google Material 3 Dark Surface Colors -->
+        <item name="android:colorBackground">@color/m3_dark_background</item>
+        <item name="colorSurface">@color/m3_dark_surface</item>
+        <item name="colorSurfaceVariant">@color/m3_dark_surface_container</item>
+        <item name="colorSecondaryContainer">@color/m3_dark_surface_container_high</item>
+        <item name="android:windowBackground">@color/m3_dark_background</item>
+
+        <!-- Google Material 3 Dark Text Colors -->
+        <item name="android:textColorPrimary">@color/m3_dark_on_surface</item>
+        <item name="android:textColorSecondary">@color/m3_dark_on_surface_variant</item>
+        <item name="android:textColorTertiary">@android:color/transparent</item>
+
+        <item name="elevationOverlayEnabled">false</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+</resources>

@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="280dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="@drawable/bg_glass_dialog">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Settings"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="?android:attr/textColorPrimary"
+        android:paddingBottom="12dp" />
+
+    <!-- Accessibility Service Toggle Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingVertical="10dp">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginEnd="12dp"
+            android:src="@drawable/ic_accessibility"
+            app:tint="?android:attr/textColorPrimary"
+            android:contentDescription="Accessibility" />
+
+        <TextView
+            android:id="@+id/popup_fsMenuItem1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Accessibility"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/popup_fsMenuItem1_switch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:clickable="true"
+            android:focusable="true"
+            android:thumb="@drawable/switch_thumb_custom"
+            app:splitTrack="false"
+            app:switchMinWidth="40dp"
+            app:track="@drawable/switch_track_custom" />
+    </LinearLayout>
+
+    <!-- Microphone Permission Toggle Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingVertical="10dp">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginEnd="12dp"
+            android:src="@drawable/ic_mic"
+            app:tint="?android:attr/textColorPrimary"
+            android:contentDescription="Microphone" />
+
+        <TextView
+            android:id="@+id/popup_fsMenuItem1_mic"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/mic_permission"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/popup_fsMenuItem1_mic_switch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:track="@drawable/switch_track_custom"
+            android:thumb="@drawable/switch_thumb_custom"
+            app:switchMinWidth="52dp"
+            app:splitTrack="false"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <!-- Notifications Permission Toggle Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingVertical="10dp">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginEnd="12dp"
+            android:src="@drawable/ic_notifications"
+            app:tint="?android:attr/textColorPrimary"
+            android:contentDescription="Notifications" />
+
+        <TextView
+            android:id="@+id/popup_fsMenuItem1_notif"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Notifications"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/popup_fsMenuItem1_notif_switch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:track="@drawable/switch_track_custom"
+            android:thumb="@drawable/switch_thumb_custom"
+            app:switchMinWidth="52dp"
+            app:splitTrack="false"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <!-- Background Access Toggle Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingVertical="10dp">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginEnd="12dp"
+            android:src="@drawable/ic_custom_void_no_bg"
+            app:tint="?android:attr/textColorPrimary"
+            android:contentDescription="Background Access" />
+
+        <TextView
+            android:id="@+id/popup_fsMenuItem1_overlay"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Background Access"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/popup_fsMenuItem1_overlay_switch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:track="@drawable/switch_track_custom"
+            android:thumb="@drawable/switch_thumb_custom"
+            app:switchMinWidth="52dp"
+            app:splitTrack="false"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+</LinearLayout>

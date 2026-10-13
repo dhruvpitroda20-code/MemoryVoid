@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Uses the Material 3 Primary Container color (adapts to light/dark automatically) -->
+    <solid android:color="?attr/colorPrimaryContainer"/>
+    <corners android:radius="24dp"/>
+</shape>

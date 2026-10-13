@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground">
+
+    <!-- Compact Top App Bar -->
+    <RelativeLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:paddingHorizontal="16dp"
+        android:translationZ="10dp">
+
+        <!-- Top Left: Sidebar Menu Button + Text "Home" -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageButton
+                android:id="@+id/btnMenu"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginEnd="6dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_menu"
+                android:contentDescription="Open Menu"
+                app:tint="?android:attr/textColorPrimary" />
+
+            <TextView
+                android:id="@+id/tvHome"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Home"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary"
+                android:fontFamily="sans-serif-medium" />
+        </LinearLayout>
+
+        <!-- Top Right: Create Note Button -->
+        <ImageButton
+            android:id="@+id/btnCreateNote"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_edit"
+            android:contentDescription="Create Note"
+            app:tint="?android:attr/textColorPrimary" />
+    </RelativeLayout>
+
+    <!-- Refresh Layout for Notes -->
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefresh"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent">
+
+        <ScrollView
+            android:id="@+id/mainScrollView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scrollbars="none"
+            android:clipToPadding="false"
+            android:paddingTop="60dp"
+            tools:ignore="SpeakableTextPresentCheck">
+
+            <LinearLayout
+                android:id="@+id/notesContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="8dp"
+                android:paddingBottom="90dp" />
+        </ScrollView>
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- TOP FADE GRADIENT OVERLAY -->
+    <View
+        android:id="@+id/topFadeOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="110dp"
+        android:layout_alignParentTop="true"
+        android:background="@drawable/bg_top_fade"
+        android:clickable="false"
+        android:focusable="false"
+        android:translationZ="5dp" />
+
+    <!-- BOTTOM FADE GRADIENT OVERLAY -->
+    <View
+        android:id="@+id/bottomFadeOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="140dp"
+        android:layout_alignParentBottom="true"
+        android:background="@drawable/bg_bottom_fade"
+        android:clickable="false"
+        android:focusable="false"
+        android:translationZ="5dp" />
+
+    <!-- Google Photos Style Single Floating Dock Container -->
+    <LinearLayout
+        android:id="@+id/bottomDockContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="vertical"
+        android:layout_marginBottom="16dp"
+        android:clipToPadding="false"
+        android:clipChildren="false"
+        android:translationZ="10dp">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/dockCard"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginHorizontal="20dp"
+            app:cardBackgroundColor="?attr/colorSurfaceVariant"
+            app:strokeWidth="0dp"
+            app:cardElevation="2dp"
+            app:cardCornerRadius="100dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp">
+
+                <!-- Category Scroll Section (Retracts when searching) -->
+                <HorizontalScrollView
+                    android:id="@+id/categoryScroll"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:scrollbars="none"
+                    android:overScrollMode="never"
+                    android:fillViewport="true">
+
+                    <FrameLayout
+                        android:id="@+id/chipContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent">
+
+                        <!-- High-Contrast Floating Active Pill (40dp height in 56dp dock = 8dp top & bottom padding) -->
+                        <View
+                            android:id="@+id/activePillBg"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_gravity="center_vertical"
+                            android:background="@drawable/bg_active_pill" />
+
+                        <LinearLayout
+                            android:id="@+id/chipTextContainer"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal" />
+                    </FrameLayout>
+                </HorizontalScrollView>
+
+                <!-- Search Button (Inside dock: 40dp height in 56dp dock = 8dp padding on all sides) -->
+                <ImageButton
+                    android:id="@+id/btnSearchBubble"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_glass_circle"
+                    android:src="@drawable/ic_search"
+                    android:contentDescription="Search"
+                    app:tint="?android:attr/textColorPrimary" />
+
+                <!-- Expanded Search Bar (Fills full dock when searching) -->
+                <LinearLayout
+                    android:id="@+id/expandedSearchLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="12dp"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:id="@+id/searchIconExpanded"
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_marginEnd="10dp"
+                        android:src="@drawable/ic_search"
+                        android:contentDescription="Search Icon"
+                        app:tint="?android:attr/textColorPrimary" />
+
+                    <EditText
+                        android:id="@+id/searchBar"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:background="@null"
+                        android:hint="@string/search_hint"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textColorHint="?android:attr/textColorSecondary"
+                        android:fontFamily="sans-serif-medium"
+                        android:textSize="15sp" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+</RelativeLayout>

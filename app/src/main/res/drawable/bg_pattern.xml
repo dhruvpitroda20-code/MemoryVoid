@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="200dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+    <!-- Subtle 2.5% opacity grid pattern -->
+    <path
+        android:strokeColor="?android:attr/textColorPrimary"
+        android:strokeAlpha="0.03"
+        android:strokeWidth="1"
+        android:pathData="M0,50 L200,50 M0,100 L200,100 M0,150 L200,150 M50,0 L50,200 M100,0 L100,200 M150,0 L150,200" />
+    <path
+        android:fillColor="?android:attr/textColorPrimary"
+        android:fillAlpha="0.04"
+        android:pathData="M100,100 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0" />
+</vector>

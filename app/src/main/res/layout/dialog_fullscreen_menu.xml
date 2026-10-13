@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/sidebarBackdrop"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#80000000"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Slide-in Panel from Left (300dp wide) -->
+    <LinearLayout
+        android:id="@+id/sidebarPanel"
+        android:layout_width="300dp"
+        android:layout_height="match_parent"
+        android:layout_alignParentStart="true"
+        android:background="?attr/colorSurface"
+        android:orientation="vertical"
+        android:paddingTop="36dp"
+        android:paddingBottom="20dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <!-- Top Header: MemoryVoid Logo + Title on TOP-LEFT, Close Button on TOP-RIGHT -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:translationX="3dp">
+
+                <ImageView
+                    android:id="@+id/menuLogo"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:contentDescription="@string/app_name"
+                    android:src="@drawable/ic_custom_void_no_bg"
+                    app:tint="?android:attr/textColorPrimary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="MemoryVoid"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Closing side bar icon on TOP RIGHT -->
+            <ImageButton
+                android:id="@+id/btnCloseSideBar"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/close_menu"
+                android:rotationY="-180"
+                android:src="@drawable/ic_close_sidebar"
+                app:tint="?android:attr/textColorPrimary" />
+        </RelativeLayout>
+
+        <!-- MAIN PANEL VIEW: How to Use -->
+        <LinearLayout
+            android:id="@+id/mainPanelView"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingHorizontal="12dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="General"
+                android:textSize="12sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:fontFamily="sans-serif-medium"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="8dp" />
+
+            <!-- Appearance Row -->
+            <TextView
+                android:id="@+id/fsMenuItemAppearance"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Appearance"
+                android:textSize="15sp"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="?android:attr/textColorPrimary"
+                android:paddingVertical="14dp"
+                android:paddingHorizontal="12dp"
+                android:drawablePadding="14dp"
+                android:gravity="center_vertical"
+                android:background="?attr/selectableItemBackground" />
+
+            <!-- How to Use Row -->
+            <TextView
+                android:id="@+id/fsMenuItemHowToUse"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/how_to_use"
+                android:textSize="15sp"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="?android:attr/textColorPrimary"
+                android:paddingVertical="14dp"
+                android:paddingHorizontal="12dp"
+                android:drawablePadding="14dp"
+                android:gravity="center_vertical"
+                android:background="?attr/selectableItemBackground" />
+        </LinearLayout>
+
+        <!-- Bottom Footer: Settings Gear Icon at BOTTOM-RIGHT without background -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="12dp">
+
+            <!-- Settings Gear Icon Button on Bottom-Right (No Background) -->
+            <ImageButton
+                android:id="@+id/btnSettingsIcon"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Settings"
+                android:src="@drawable/ic_settings"
+                android:translationY="10dp"
+                app:tint="?android:attr/textColorPrimary" />
+        </RelativeLayout>
+    </LinearLayout>
+</RelativeLayout>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.appcompat.widget.AppCompatButton xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="wrap_content"
+    android:layout_height="36dp"
+    android:layout_marginEnd="8dp"
+    android:background="@drawable/inverted_pill_bg"
+    android:minWidth="0dp"
+    android:minHeight="0dp"
+    android:paddingHorizontal="16dp"
+    android:textAllCaps="false"
+    android:textColor="?android:attr/colorBackground"
+    tools:ignore="SpeakableTextPresentCheck" />
