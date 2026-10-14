@@ -1,16 +1,17 @@
 package com.example.essentialspace
 
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputMethodManager
-import android.content.Context
-import android.animation.TimeInterpolator
 import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.media.MediaPlayer
-import android.os.Bundle
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -21,29 +22,25 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.view.animation.PathInterpolator
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.*
+import androidx.activity.ComponentDialog
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.res.ResourcesCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-import org.json.JSONArray
-import org.json.JSONObject
-import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
-import android.content.pm.PackageManager
-import androidx.core.app.ActivityCompat
-
 import androidx.lifecycle.lifecycleScope
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
@@ -90,23 +87,24 @@ class MainActivity : AppCompatActivity() {
     private val noteReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "com.example.essentialspace.NOTE_SAVED") {
-                // Notifications are already handled by KeyMappingService directly.
-                loadDataToMemory() // Reload memory with the new note
+                loadDataToMemory()
                 refreshUI()
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Enforce Theme via ThemeManager before super.onCreate()
-        prefs = ThemeManager.getPrefs(this)
-        ThemeManager.initActivityTheme(this)
-
         installSplashScreen()
         super.onCreate(savedInstanceState)
 
+        // Must be called AFTER super.onCreate() so installSplashScreen() doesn't overwrite the theme!
+        prefs = ThemeManager.getPrefs(this)
+        ThemeManager.initActivityTheme(this)
+
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
+
+        ThemeManager.applyThemeColorsToMain(this)
 
         val topBar = findViewById<RelativeLayout>(R.id.topBar)
         val bottomDockContainer = findViewById<LinearLayout>(R.id.bottomDockContainer)
@@ -126,7 +124,6 @@ class MainActivity : AppCompatActivity() {
 
             bottomDockContainer.setPadding(0, 0, 0, bottomInset)
 
-            // Dynamic ScrollView padding: Accounts for IME (software keyboard) & system bars!
             val topBarTotalHeight = sysBars.top + (52 * density).toInt() + (8 * density).toInt() + (12 * density).toInt()
             val mainScrollView = findViewById<ScrollView>(R.id.mainScrollView)
             mainScrollView?.setPadding(0, topBarTotalHeight, 0, bottomInset + (90 * density).toInt())
@@ -134,7 +131,7 @@ class MainActivity : AppCompatActivity() {
             WindowInsetsCompat.CONSUMED
         }
 
-        loadDataToMemory() // Load the memory immediately on startup
+        loadDataToMemory()
 
         NotificationHelper.createChannels(this)
 
@@ -175,12 +172,13 @@ class MainActivity : AppCompatActivity() {
                 showWalkthroughDialog()
             }, 400)
         }
-        
+
         handleIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleIntent(intent)
     }
 
@@ -188,7 +186,9 @@ class MainActivity : AppCompatActivity() {
         intent?.let {
             val openIndex = it.getIntExtra("open_note_index", -1)
             if (openIndex != -1) {
+                it.removeExtra("open_note_index")
                 window.decorView.postDelayed({
+                    loadDataToMemory()
                     val noteObj = masterNotesArray.optJSONObject(openIndex)
                     if (noteObj != null) {
                         showFullScreenNote(
@@ -200,23 +200,27 @@ class MainActivity : AppCompatActivity() {
                             masterNotesArray
                         )
                     }
-                }, 400) // slight delay to ensure UI is completely loaded
+                }, 350)
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        loadDataToMemory() // Sync memory when returning to the app
-        refreshUI()
+        loadDataToMemory()
+        ThemeManager.applyThemeColorsToMain(this)
+        refreshUI(animateEntrance = false)
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(noteReceiver)
+        try {
+            unregisterReceiver(noteReceiver)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
-    // Safely reads the physical drive and caches the JSON Array into RAM
     private fun loadDataToMemory() {
         masterNotesArray = try {
             JSONArray(prefs.getString("notes_array", "[]"))
@@ -226,36 +230,32 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showZoomableImage(imgPath: String) {
-        val currentTheme = prefs.getString("theme_pref", "dark")
-        val themeRes = when (currentTheme) {
-            "light" -> R.style.Theme_EssentialSpace_FullscreenMenu
-            "black" -> R.style.Theme_EssentialSpace_PitchBlack_FullscreenMenu
-            "glass" -> R.style.Theme_EssentialSpace_Glass_FullscreenMenu
-            else -> R.style.Theme_EssentialSpace_FullscreenMenu
-        }
-        val dialog = android.app.Dialog(this, themeRes)
+        val currentTheme = ThemeManager.getCurrentThemeKey(this)
+        val themeRes = ThemeManager.getThemeDialogRes(this)
+        val dialog = ComponentDialog(this, themeRes)
         dialog.setContentView(R.layout.dialog_zoom)
 
         dialog.window?.let { window ->
             window.setWindowAnimations(R.style.IosZoomAnimation)
-            if (currentTheme == "glass") {
+            if (currentTheme == ThemeManager.THEME_GLASS) {
                 window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-            } else if (currentTheme == "light" || currentTheme == "dark") {
-                window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK)) // Ensure dark/pitch black for photos
+                window.setBackgroundDrawable(ColorDrawable(Color.parseColor("#CC000000")))
+            } else {
+                window.setBackgroundDrawable(ColorDrawable(Color.BLACK))
             }
 
-            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+            WindowCompat.setDecorFitsSystemWindows(window, false)
             androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
-                hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                hide(WindowInsetsCompat.Type.systemBars())
                 systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                window.attributes.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
 
         val zoomImageView = dialog.findViewById<com.github.chrisbanes.photoview.PhotoView>(R.id.zoomImageView)
-        val btnClose = dialog.findViewById<android.widget.ImageButton>(R.id.btnCloseZoom)
+        val btnClose = dialog.findViewById<ImageButton>(R.id.btnCloseZoom)
 
         zoomImageView?.scaleX = 0.85f
         zoomImageView?.scaleY = 0.85f
@@ -271,11 +271,11 @@ class MainActivity : AppCompatActivity() {
         btnClose?.addApplePressEffect()
 
         if (imgPath.isNotEmpty() && java.io.File(imgPath).exists()) {
-            val bitmap = android.graphics.BitmapFactory.decodeFile(imgPath)
-            zoomImageView.setImageBitmap(bitmap)
+            val bitmap = BitmapFactory.decodeFile(imgPath)
+            zoomImageView?.setImageBitmap(bitmap)
         }
 
-        btnClose.setOnClickListener { dialog.dismiss() }
+        btnClose?.setOnClickListener { dialog.dismiss() }
         dialog.show()
     }
 
@@ -292,7 +292,6 @@ class MainActivity : AppCompatActivity() {
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
-                    // Set scale pivot dynamically to the exact tap touch location
                     v.pivotX = event.x.coerceIn(0f, v.width.toFloat())
                     v.pivotY = event.y.coerceIn(0f, v.height.toFloat())
                     v.animate()
@@ -391,7 +390,6 @@ class MainActivity : AppCompatActivity() {
             val dy = scrollY - oldScrollY
 
             if (dy > 12 && isDockVisible && scrollY > 80) {
-                // Scroll Down -> Hide Top Bar, Bottom Dock & Fades for 100% immersive view
                 isDockVisible = false
 
                 topBar?.animate()
@@ -417,7 +415,6 @@ class MainActivity : AppCompatActivity() {
                     ?.start()
 
             } else if ((dy < -12 || scrollY <= 20) && !isDockVisible) {
-                // Scroll Up or Near Top -> Re-reveal Bars & Fades smoothly
                 isDockVisible = true
 
                 topBar?.animate()
@@ -483,7 +480,6 @@ class MainActivity : AppCompatActivity() {
                 val newQuery = s.toString().trim()
                 if (searchQuery != newQuery) {
                     searchQuery = newQuery
-                    // Disable card slide-in animations during active searching to keep the UI snappy
                     refreshUI(animateEntrance = false)
                 }
             }
@@ -517,32 +513,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showFullScreenMenu() {
-        val currentTheme = prefs.getString("theme_pref", "dark")
-        val themeRes = when (currentTheme) {
-            "light" -> R.style.Theme_EssentialSpace_FullscreenMenu
-            "black" -> R.style.Theme_EssentialSpace_PitchBlack_FullscreenMenu
-            "glass" -> R.style.Theme_EssentialSpace_Glass_FullscreenMenu
-            else -> R.style.Theme_EssentialSpace_FullscreenMenu
-        }
-        val dialog = android.app.Dialog(this, themeRes)
+        val currentTheme = ThemeManager.getCurrentThemeKey(this)
+        val themeRes = ThemeManager.getThemeDialogRes(this)
+        val dialog = ComponentDialog(this, themeRes)
         dialog.setContentView(R.layout.dialog_fullscreen_menu)
 
         dialog.window?.let { window ->
-            // Slide in from left animation
             window.attributes?.windowAnimations = R.style.SideBarAnimationLeft
-            if (currentTheme == "glass") {
+            if (currentTheme == ThemeManager.THEME_GLASS) {
                 window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                // Removed setBackgroundBlurRadius to prevent glass background flickering during slide animation
             }
-            
+
             window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             WindowCompat.setDecorFitsSystemWindows(window, false)
-            
-            // Removed hide(WindowInsetsCompat.Type.systemBars()) to prevent the underlying activity from jumping upwards!
 
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
+        }
+
+        val sidebarPanel = dialog.findViewById<View>(R.id.sidebarPanel)
+        if (sidebarPanel != null) {
+            val panelColor = when (currentTheme) {
+                ThemeManager.THEME_LIGHT -> Color.WHITE
+                ThemeManager.THEME_GLASS -> Color.parseColor("#E6161920")
+                else -> Color.parseColor("#0A0A0A")
+            }
+            sidebarPanel.setBackgroundColor(panelColor)
         }
 
         val backdrop = dialog.findViewById<View>(R.id.sidebarBackdrop)
@@ -556,25 +553,32 @@ class MainActivity : AppCompatActivity() {
         itemHowToUse?.typeface = font
         itemAppearance?.typeface = font
 
-        dialog.findViewById<ImageView>(R.id.menuLogo)?.setImageResource(getAppIconRes())
+        val primaryColor = ThemeManager.getPrimaryColor(this)
+        dialog.findViewById<ImageView>(R.id.menuLogo)?.apply {
+            setImageResource(getAppIconRes())
+            setColorFilter(primaryColor)
+        }
+        btnCloseSideBar?.setColorFilter(primaryColor)
+        btnSettingsIcon?.setColorFilter(primaryColor)
+        itemHowToUse?.setTextColor(primaryColor)
+        itemAppearance?.setTextColor(primaryColor)
 
         btnCloseSideBar?.addApplePressEffect()
         btnSettingsIcon?.addApplePressEffect()
         itemHowToUse?.addApplePressEffect()
         itemAppearance?.addApplePressEffect()
 
-        // Backdrop click closes side bar
         backdrop?.setOnClickListener { dialog.dismiss() }
         btnCloseSideBar?.setOnClickListener { dialog.dismiss() }
 
-        // Main Panel Items
         itemHowToUse?.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_help, 0, 0, 0)
+        itemHowToUse?.compoundDrawables?.forEach { it?.setTint(primaryColor) }
         itemHowToUse?.setOnClickListener { dialog.dismiss(); showHowToUseDialog() }
 
         itemAppearance?.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_appearance, 0, 0, 0)
+        itemAppearance?.compoundDrawables?.forEach { it?.setTint(primaryColor) }
         itemAppearance?.setOnClickListener { dialog.dismiss(); showAppearanceDialog() }
 
-        // Settings Icon opens Popup Menu with all toggles
         btnSettingsIcon?.setOnClickListener {
             showSettingsPopup()
         }
@@ -582,9 +586,17 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    private fun applyDialogSurface(dialog: android.app.Dialog) {
+        val root = (dialog.findViewById<ViewGroup>(android.R.id.content))?.getChildAt(0)
+        if (root != null) {
+            ThemeManager.applyPopupSurfaceStyle(this, root)
+        }
+    }
+
     private fun showSettingsPopup() {
-        val dialog = android.app.Dialog(this, R.style.ThemedDialog)
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
         dialog.setContentView(R.layout.dialog_settings_popup)
+        applyDialogSurface(dialog)
 
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.window?.setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -593,13 +605,12 @@ class MainActivity : AppCompatActivity() {
         val item1MicSwitch = dialog.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.popup_fsMenuItem1_mic_switch)
         val item1NotifSwitch = dialog.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.popup_fsMenuItem1_notif_switch)
         val item1OverlaySwitch = dialog.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.popup_fsMenuItem1_overlay_switch)
-        
+
         item1Switch?.addApplePressEffect()
         item1MicSwitch?.addApplePressEffect()
         item1NotifSwitch?.addApplePressEffect()
         item1OverlaySwitch?.addApplePressEffect()
 
-        // Accessibility Service Toggle
         item1Switch?.isChecked = isAccessibilityServiceEnabled(this, KeyMappingService::class.java)
         item1Switch?.setOnClickListener {
             dialog.dismiss()
@@ -607,7 +618,6 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        // Microphone Permission Toggle
         val isMicGranted = ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         item1MicSwitch?.isChecked = isMicGranted
         item1MicSwitch?.setOnClickListener {
@@ -625,7 +635,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Notifications Permission Toggle
         val isNotifGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         } else {
@@ -647,8 +656,7 @@ class MainActivity : AppCompatActivity() {
                 startActivity(intent)
             }
         }
-        
-        // Background Running Access Toggle
+
         val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
         val isIgnoringBatteryOptimizations = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && powerManager != null) {
             powerManager.isIgnoringBatteryOptimizations(packageName)
@@ -700,23 +708,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAppearanceDialog() {
-        val dialog = android.app.Dialog(this, R.style.ThemedDialog)
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
         dialog.setContentView(R.layout.dialog_appearance)
+        applyDialogSurface(dialog)
 
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         dialog.window?.setWindowAnimations(R.style.BouncyDialogAnimation)
 
-        // Close Button
         val btnClose = dialog.findViewById<ImageButton>(R.id.btnCloseAppearance)
         btnClose?.addApplePressEffect()
         btnClose?.setOnClickListener { dialog.dismiss() }
 
-        // Theme Cards
         val cardLight = dialog.findViewById<View>(R.id.themeCardLight)
         val cardDark = dialog.findViewById<View>(R.id.themeCardDark)
         val cardGlass = dialog.findViewById<View>(R.id.themeCardGlass)
-        
+
         val radioLight = dialog.findViewById<RadioButton>(R.id.radioLight)
         val radioDark = dialog.findViewById<RadioButton>(R.id.radioDark)
         val radioGlass = dialog.findViewById<RadioButton>(R.id.radioGlass)
@@ -727,7 +734,7 @@ class MainActivity : AppCompatActivity() {
             radioLight?.isChecked = theme == ThemeManager.THEME_LIGHT
             radioDark?.isChecked = theme == ThemeManager.THEME_DARK || theme == ThemeManager.THEME_BLACK
             radioGlass?.isChecked = theme == ThemeManager.THEME_GLASS
-            
+
             cardLight?.isSelected = radioLight?.isChecked == true
             cardDark?.isSelected = radioDark?.isChecked == true
             cardGlass?.isSelected = radioGlass?.isChecked == true
@@ -735,15 +742,26 @@ class MainActivity : AppCompatActivity() {
         updateThemeSelection(currentTheme)
 
         cardLight?.addApplePressEffect()
-        cardLight?.setOnClickListener { ThemeManager.applyTheme(this, ThemeManager.THEME_LIGHT) }
+        cardLight?.setOnClickListener {
+            updateThemeSelection(ThemeManager.THEME_LIGHT)
+            dialog.dismiss()
+            ThemeManager.applyTheme(this, ThemeManager.THEME_LIGHT)
+        }
 
         cardDark?.addApplePressEffect()
-        cardDark?.setOnClickListener { ThemeManager.applyTheme(this, ThemeManager.THEME_DARK) }
+        cardDark?.setOnClickListener {
+            updateThemeSelection(ThemeManager.THEME_BLACK)
+            dialog.dismiss()
+            ThemeManager.applyTheme(this, ThemeManager.THEME_BLACK)
+        }
 
         cardGlass?.addApplePressEffect()
-        cardGlass?.setOnClickListener { ThemeManager.applyTheme(this, ThemeManager.THEME_GLASS) }
+        cardGlass?.setOnClickListener {
+            updateThemeSelection(ThemeManager.THEME_GLASS)
+            dialog.dismiss()
+            ThemeManager.applyTheme(this, ThemeManager.THEME_GLASS)
+        }
 
-        // Accent Colors
         val primaryColor = ThemeManager.getPrimaryColor(this)
         val colors = intArrayOf(
             primaryColor,                // Primary Theme Color
@@ -766,11 +784,12 @@ class MainActivity : AppCompatActivity() {
                 val itemFrame = colorContainer.getChildAt(i) as? FrameLayout ?: continue
                 val circleColor = itemFrame.tag as? Int ?: continue
                 val ringView = itemFrame.getChildAt(0)
-                val checkView = itemFrame.getChildAt(2)
+                val checkView = itemFrame.getChildAt(2) as? ImageView
 
                 val isThisSelected = activeColor == circleColor
                 ringView.visibility = if (isThisSelected) View.VISIBLE else View.INVISIBLE
-                checkView.visibility = if (isThisSelected) View.VISIBLE else View.GONE
+                checkView?.visibility = if (isThisSelected) View.VISIBLE else View.GONE
+                checkView?.setColorFilter(ThemeManager.getContrastingTextColor(circleColor))
             }
         }
 
@@ -811,8 +830,9 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = FrameLayout.LayoutParams(checkSize, checkSize).apply {
                     gravity = Gravity.CENTER
                 }
+                tag = "accent_check"
                 setImageResource(R.drawable.ic_check)
-                setColorFilter(if (color == Color.WHITE) Color.BLACK else Color.WHITE)
+                setColorFilter(ThemeManager.getContrastingTextColor(color))
                 visibility = View.GONE
             }
 
@@ -847,12 +867,13 @@ class MainActivity : AppCompatActivity() {
     private fun refreshThemeColors() {
         ThemeManager.applyThemeColorsToMain(this)
         loadDynamicTags()
-        refreshUI()
+        refreshUI(animateEntrance = false)
     }
 
     private fun showWalkthroughDialog() {
-        val dialog = android.app.Dialog(this, R.style.ThemedDialog)
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
         dialog.setContentView(R.layout.dialog_walkthrough)
+        applyDialogSurface(dialog)
 
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
@@ -878,23 +899,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPermissionsRedirectDialog() {
-        val dialog = android.app.Dialog(this, R.style.ThemedDialog)
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
         dialog.setContentView(R.layout.dialog_glass)
+        applyDialogSurface(dialog)
 
-        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
-        dialog.findViewById<TextView>(R.id.dialogTitle).text = "Permissions Required"
-        dialog.findViewById<TextView>(R.id.dialogMessage).text = "MemoryVoid needs access to your files to save and retrieve your screenshots."
+        dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "Permissions Required"
+        dialog.findViewById<TextView>(R.id.dialogMessage)?.text = "MemoryVoid needs access to your files to save and retrieve your screenshots."
 
         val btnNegative = dialog.findViewById<TextView>(R.id.btnNegative)
-        btnNegative.text = "CANCEL"
-        btnNegative.setOnClickListener { dialog.dismiss() }
+        btnNegative?.text = "CANCEL"
+        btnNegative?.setOnClickListener { dialog.dismiss() }
 
         val btnPositive = dialog.findViewById<TextView>(R.id.btnPositive)
-        btnPositive.text = "OPEN SETTINGS"
-        btnPositive.setOnClickListener {
+        btnPositive?.text = "OPEN SETTINGS"
+        btnPositive?.setOnClickListener {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
             intent.data = android.net.Uri.fromParts("package", packageName, null)
             startActivity(intent)
@@ -905,15 +927,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showHowToUseDialog() {
-        val dialog = android.app.Dialog(this, R.style.ThemedDialog)
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
         dialog.setContentView(R.layout.dialog_glass)
+        applyDialogSurface(dialog)
 
-        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
-        dialog.findViewById<TextView>(R.id.dialogTitle).text = "How to Use MemoryVoid"
-        
+        dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "How to Use MemoryVoid"
+
         val tutorialText = """
             Setup:
             1. Open Navigation Menu > Settings.
@@ -927,8 +950,8 @@ class MainActivity : AppCompatActivity() {
             • Tap the 3-dots icon on any note card to rename or delete.
             • Tap the play button to hear your voice note.
         """.trimIndent()
-        
-        dialog.findViewById<TextView>(R.id.dialogMessage).text = tutorialText
+
+        dialog.findViewById<TextView>(R.id.dialogMessage)?.text = tutorialText
 
         val btnNegative = dialog.findViewById<TextView>(R.id.btnNegative)
         val btnPositive = dialog.findViewById<TextView>(R.id.btnPositive)
@@ -936,10 +959,10 @@ class MainActivity : AppCompatActivity() {
         btnNegative?.addApplePressEffect()
         btnPositive?.addApplePressEffect()
 
-        btnNegative.visibility = View.GONE
+        btnNegative?.visibility = View.GONE
 
-        btnPositive.text = "GOT IT"
-        btnPositive.setOnClickListener { dialog.dismiss() }
+        btnPositive?.text = "GOT IT"
+        btnPositive?.setOnClickListener { dialog.dismiss() }
 
         dialog.show()
     }
@@ -947,7 +970,6 @@ class MainActivity : AppCompatActivity() {
     private fun setupSwipeRefresh() {
         val swipe = findViewById<SwipeRefreshLayout>(R.id.swipeRefresh)
         val density = resources.displayMetrics.density
-        // Offset the swipe refresh indicator so it drops down smoothly from underneath topBar!
         val startOffset = (64 * density).toInt()
         val endOffset = (120 * density).toInt()
         swipe.setProgressViewOffset(false, startOffset, endOffset)
@@ -974,13 +996,12 @@ class MainActivity : AppCompatActivity() {
         val standardFont = getAppTypeface()
         val accentColor = getAccentColor()
 
-        // Dynamically calculate contrast text color for active pill
-        val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(accentColor)
-        val activeTextColor = if (luminance > 0.55) Color.BLACK else Color.WHITE
-
-        val typedValueSecondary = android.util.TypedValue()
-        theme.resolveAttribute(android.R.attr.textColorSecondary, typedValueSecondary, true)
-        val inactiveColor = typedValueSecondary.data
+        val activeTextColor = ThemeManager.getContrastingTextColor(accentColor)
+        val inactiveColor = if (ThemeManager.getCurrentThemeKey(this) == ThemeManager.THEME_LIGHT) {
+            Color.parseColor("#5C6270")
+        } else {
+            Color.parseColor("#98A2B3")
+        }
 
         pillBg.background = ContextCompat.getDrawable(this, R.drawable.bg_active_pill)
         pillBg.backgroundTintList = android.content.res.ColorStateList.valueOf(accentColor)
@@ -1000,7 +1021,6 @@ class MainActivity : AppCompatActivity() {
                 }
                 setPadding(36, 0, 36, 0)
 
-                // Set the dynamic color based on selection
                 setTextColor(if (tag == currentFilter) activeTextColor else inactiveColor)
 
                 addApplePressEffect()
@@ -1035,23 +1055,24 @@ class MainActivity : AppCompatActivity() {
 
                 if (tag != "All") {
                     setOnLongClickListener {
-                        val dialog = android.app.Dialog(this@MainActivity, R.style.ThemedDialog)
+                        val dialog = ComponentDialog(this@MainActivity, ThemeManager.getDialogThemeRes(this@MainActivity))
                         dialog.setContentView(R.layout.dialog_glass)
+                        applyDialogSurface(dialog)
 
-                        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+                        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
                         dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
                         dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
-                        dialog.findViewById<TextView>(R.id.dialogTitle).text = "Remove Category"
-                        dialog.findViewById<TextView>(R.id.dialogMessage).text = "Delete '$tag' from categories?"
+                        dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "Remove Category"
+                        dialog.findViewById<TextView>(R.id.dialogMessage)?.text = "Delete '$tag' from categories?"
 
                         val btnNegative = dialog.findViewById<TextView>(R.id.btnNegative)
-                        btnNegative.text = "CANCEL"
-                        btnNegative.setOnClickListener { dialog.dismiss() }
+                        btnNegative?.text = "CANCEL"
+                        btnNegative?.setOnClickListener { dialog.dismiss() }
 
                         val btnPositive = dialog.findViewById<TextView>(R.id.btnPositive)
-                        btnPositive.text = "DELETE"
-                        btnPositive.setOnClickListener {
+                        btnPositive?.text = "DELETE"
+                        btnPositive?.setOnClickListener {
                             savedTags.remove(tag)
                             prefs.edit().putStringSet("custom_tags", savedTags).apply()
                             if (currentFilter == tag) currentFilter = "All"
@@ -1080,9 +1101,7 @@ class MainActivity : AppCompatActivity() {
                 marginEnd = (12 * resources.displayMetrics.density).toInt()
             }
 
-            background = getDrawable(R.drawable.glass_dock)
-
-            // Apply the dynamic active color to the add button
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.glass_dock)
             setTextColor(accentColor)
 
             addApplePressEffect()
@@ -1103,39 +1122,39 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAddCategoryDialog(savedTags: MutableSet<String>) {
-        val dialog = android.app.Dialog(this, R.style.ThemedDialog)
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
         dialog.setContentView(R.layout.dialog_glass_input)
+        applyDialogSurface(dialog)
 
-        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-        dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        dialog.window?.setGravity(Gravity.BOTTOM)
-        
-        val params = dialog.window?.attributes
-        params?.y = (72 * resources.displayMetrics.density).toInt()
-        dialog.window?.attributes = params
+        dialog.window?.let { window ->
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            window.setGravity(Gravity.BOTTOM)
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+            val params = window.attributes
+            params?.y = (72 * resources.displayMetrics.density).toInt()
+            window.attributes = params
+        }
 
-        dialog.findViewById<TextView>(R.id.dialogTitle).text = "Add Category"
+        dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "Add Category"
 
         val input = dialog.findViewById<EditText>(R.id.dialogInput)
-        input.hint = "New Category Name"
-        input.text.clear()
-        input.requestFocus()
-        
+        input?.hint = "New Category Name"
+        input?.setText("")
+
         val btnNegative = dialog.findViewById<TextView>(R.id.btnNegative)
         val btnPositive = dialog.findViewById<TextView>(R.id.btnPositive)
-        
+
         btnNegative?.addApplePressEffect()
         btnPositive?.addApplePressEffect()
 
-        btnNegative.text = "CANCEL"
-        btnNegative.setOnClickListener { dialog.dismiss() }
+        btnNegative?.text = "CANCEL"
+        btnNegative?.setOnClickListener { dialog.dismiss() }
 
-        btnPositive.text = "ADD"
-        btnPositive.setOnClickListener {
-            val newCategory = input.text.toString().trim()
+        btnPositive?.text = "ADD"
+        btnPositive?.setOnClickListener {
+            val newCategory = input?.text?.toString()?.trim() ?: ""
             if (newCategory.isNotEmpty()) {
                 savedTags.add(newCategory)
                 prefs.edit().putStringSet("custom_tags", savedTags).apply()
@@ -1146,6 +1165,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+        input?.post {
+            input.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun refreshUI(animateEntrance: Boolean = true) {
@@ -1155,10 +1179,18 @@ class MainActivity : AppCompatActivity() {
         val jsonArray = masterNotesArray
         val inflater = layoutInflater
 
-        // Cache font, accent color, and date formatter OUTSIDE loop for maximum performance
         val font = getAppTypeface()
         val accentColor = getAccentColor()
+        val themeKey = ThemeManager.getCurrentThemeKey(this)
         val sdf = java.text.SimpleDateFormat("MMM dd, yyyy • hh:mm a", java.util.Locale.getDefault())
+
+        val cardBgColor = when (themeKey) {
+            ThemeManager.THEME_LIGHT -> Color.WHITE
+            ThemeManager.THEME_GLASS -> Color.parseColor("#B3161920")
+            else -> Color.parseColor("#121212")
+        }
+        val titleColor = if (themeKey == ThemeManager.THEME_LIGHT) Color.parseColor("#121316") else Color.WHITE
+        val dateColor = if (themeKey == ThemeManager.THEME_LIGHT) Color.parseColor("#5C6270") else Color.parseColor("#98A2B3")
 
         lifecycleScope.launch {
             for (i in jsonArray.length() - 1 downTo 0) {
@@ -1170,13 +1202,17 @@ class MainActivity : AppCompatActivity() {
                 if (searchQuery.isNotEmpty() && !summary.lowercase().contains(searchQuery.lowercase())) continue
 
                 val view = inflater.inflate(R.layout.note_item, container, false)
+                (view as? com.google.android.material.card.MaterialCardView)?.setCardBackgroundColor(cardBgColor)
+
                 val itemTitle = view.findViewById<TextView>(R.id.itemTitle)
                 itemTitle.text = summary
                 itemTitle.typeface = font
+                itemTitle.setTextColor(titleColor)
 
                 val timestamp = noteObj.optLong("timestamp", 0L)
                 val dateView = view.findViewById<TextView>(R.id.itemDate)
                 dateView.typeface = font
+                dateView.setTextColor(dateColor)
                 if (timestamp > 0L) {
                     dateView.text = sdf.format(java.util.Date(timestamp))
                 } else {
@@ -1187,7 +1223,6 @@ class MainActivity : AppCompatActivity() {
                 val imageView = view.findViewById<ImageView>(R.id.itemImage)
                 val imageContainer = view.findViewById<View>(R.id.imageContainer)
 
-                // High-performance image thumbnail loading with LruCache & Coroutines
                 if (imgPath.isNotEmpty() && java.io.File(imgPath).exists()) {
                     imageContainer?.visibility = View.VISIBLE
                     val cachedBitmap = thumbnailCache.get(imgPath)
@@ -1217,7 +1252,7 @@ class MainActivity : AppCompatActivity() {
                 val audioPath = noteObj.optString("audio_path", "")
                 val playBtn = view.findViewById<ImageButton>(R.id.itemPlay)
                 playBtn.setColorFilter(accentColor)
-                
+
                 if (audioPath.isNotEmpty() && java.io.File(audioPath).exists()) {
                     playBtn.visibility = View.VISIBLE
                     playBtn.setOnClickListener {
@@ -1238,6 +1273,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val itemMenu = view.findViewById<ImageButton>(R.id.itemMenu)
+                itemMenu?.setColorFilter(titleColor)
                 itemMenu?.addApplePressEffect()
                 itemMenu?.setOnClickListener {
                     showNoteOptionsFlyout(itemMenu, noteObj, i, jsonArray)
@@ -1248,16 +1284,15 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 view.addApplePressEffect()
-                
+
                 if (animateEntrance) {
-                    // Add a smooth bouncy slide-up cascade animation as cards load in
                     view.translationY = 120f
                     view.scaleX = 0.95f
                     view.scaleY = 0.95f
                     view.alpha = 0f
-                    
+
                     val delayIndex = jsonArray.length() - 1 - i
-                    
+
                     view.animate()
                         .translationY(0f)
                         .scaleX(1f)
@@ -1268,7 +1303,7 @@ class MainActivity : AppCompatActivity() {
                         .setInterpolator(appleOvershoot)
                         .start()
                 }
-                
+
                 container.addView(view)
             }
         }
@@ -1290,20 +1325,17 @@ class MainActivity : AppCompatActivity() {
     private fun showCategoryFlyout(anchorView: View, noteObj: JSONObject, index: Int, jsonArray: JSONArray, tagList: Array<String>) {
         val listView = ListView(this)
 
-        listView.background = ContextCompat.getDrawable(this, R.drawable.bg_glass_dialog)
+        ThemeManager.applyPopupSurfaceStyle(this, listView)
         listView.divider = ColorDrawable(Color.TRANSPARENT)
         listView.dividerHeight = 0
         listView.setPadding(0, 16, 0, 16)
 
-        val typedValuePrimary = android.util.TypedValue()
-        theme.resolveAttribute(android.R.attr.textColorPrimary, typedValuePrimary, true)
-        val dynamicTextColor = typedValuePrimary.data
+        val dynamicTextColor = ThemeManager.getPrimaryColor(this)
 
         val adapter = object : ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, tagList) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val view = super.getView(position, convertView, parent) as TextView
-
-                view.setTextColor(dynamicTextColor) // Safely flips text color
+                view.setTextColor(dynamicTextColor)
                 view.gravity = Gravity.CENTER
                 view.typeface = getAppTypeface()
                 view.isSingleLine = true
@@ -1312,7 +1344,6 @@ class MainActivity : AppCompatActivity() {
         }
         listView.adapter = adapter
 
-        // Set a minimum width of 140dp so text never squishes on the home screen
         val minWidth = (140 * resources.displayMetrics.density).toInt()
         val popupWidth = Math.max(anchorView.width, minWidth)
 
@@ -1332,8 +1363,8 @@ class MainActivity : AppCompatActivity() {
             try {
                 noteObj.put("tag", selectedTag)
                 prefs.edit().putString("notes_array", jsonArray.toString()).apply()
-                loadDataToMemory() // Sync the physical save directly to RAM
-                refreshUI()
+                loadDataToMemory()
+                refreshUI(animateEntrance = false)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -1356,23 +1387,20 @@ class MainActivity : AppCompatActivity() {
             popupHeight = (tagList.size * 120) + 32
         }
 
-        // PERFECT CENTERING: Adjust the X coordinate so the popup hovers centered over smaller buttons
         val finalX = location[0] - ((popupWidth - anchorView.width) / 2)
-        
+
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
-        
+
         val spaceAbove = location[1]
         val spaceBelow = screenHeight - location[1] - anchorView.height
-        
-        // Decide whether to show above or below based on available space
+
         val finalY = if (spaceBelow < popupHeight + 100 && spaceAbove > spaceBelow) {
-            location[1] - popupHeight - 24 // Show Above
+            location[1] - popupHeight - 24
         } else {
-            location[1] + anchorView.height + 24 // Show Below
+            location[1] + anchorView.height + 24
         }
-        
-        // Ensure the popup doesn't clip off the screen horizontally
+
         val safeX = finalX.coerceIn(32, screenWidth - popupWidth - 32)
 
         popupWindow.showAtLocation(anchorView, Gravity.NO_GRAVITY, safeX, finalY)
@@ -1382,7 +1410,7 @@ class MainActivity : AppCompatActivity() {
         val popupView = layoutInflater.inflate(R.layout.popup_glass_menu, null)
         val popupWindow = PopupWindow(popupView, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true)
         popupWindow.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        popupWindow.elevation = 0f
+        popupWindow.elevation = 20f
 
         val item1 = popupView.findViewById<TextView>(R.id.menuItem1)
         val item2 = popupView.findViewById<TextView>(R.id.menuItem2)
@@ -1391,15 +1419,15 @@ class MainActivity : AppCompatActivity() {
         item1.text = "Rename"
         item1.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_edit, 0, 0, 0)
         item1.compoundDrawablePadding = (12 * resources.displayMetrics.density).toInt()
-        
+
         item2.text = "Delete"
         item2.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_delete, 0, 0, 0)
         item2.compoundDrawablePadding = (12 * resources.displayMetrics.density).toInt()
 
-        // Hide the theme toggle button for this specific menu
         item3.visibility = View.GONE
 
-        // ... keep your existing click listeners ...
+        // Apply surface and text/drawable colors AFTER setting drawables so icons get tinted properly!
+        ThemeManager.applyPopupSurfaceStyle(this, popupView)
 
         item1.setOnClickListener {
             popupWindow.dismiss()
@@ -1425,9 +1453,9 @@ class MainActivity : AppCompatActivity() {
         val spaceBelow = screenHeight - location[1] - anchorView.height
 
         val finalY = if (spaceBelow < popupHeight + 100 && spaceAbove > spaceBelow) {
-            location[1] - popupHeight - 16 // Show Above
+            location[1] - popupHeight - 16
         } else {
-            location[1] + anchorView.height + 16 // Show Below
+            location[1] + anchorView.height + 16
         }
 
         val finalX = location[0] - ((popupWidth - anchorView.width) / 2)
@@ -1437,25 +1465,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCreateNoteDialog() {
-        val dialog = android.app.Dialog(this, R.style.ThemedDialog)
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
         dialog.setContentView(R.layout.dialog_glass_input)
+        applyDialogSurface(dialog)
 
-        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-        dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        dialog.window?.setGravity(Gravity.BOTTOM)
+        dialog.window?.let { window ->
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            window.setGravity(Gravity.BOTTOM)
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+            val params = window.attributes
+            params?.y = (72 * resources.displayMetrics.density).toInt()
+            window.attributes = params
+        }
 
-        val params = dialog.window?.attributes
-        params?.y = (72 * resources.displayMetrics.density).toInt()
-        dialog.window?.attributes = params
-
-        dialog.findViewById<TextView>(R.id.dialogTitle).text = "Create Note"
+        dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "Create Note"
 
         val input = dialog.findViewById<EditText>(R.id.dialogInput)
-        input.hint = "Write your note here..."
-        input.text.clear()
-        input.requestFocus()
+        input?.hint = "Write your note here..."
+        input?.setText("")
 
         val btnNegative = dialog.findViewById<TextView>(R.id.btnNegative)
         val btnPositive = dialog.findViewById<TextView>(R.id.btnPositive)
@@ -1463,12 +1492,12 @@ class MainActivity : AppCompatActivity() {
         btnNegative?.addApplePressEffect()
         btnPositive?.addApplePressEffect()
 
-        btnNegative.text = "CANCEL"
-        btnNegative.setOnClickListener { dialog.dismiss() }
+        btnNegative?.text = "CANCEL"
+        btnNegative?.setOnClickListener { dialog.dismiss() }
 
-        btnPositive.text = "SAVE"
-        btnPositive.setOnClickListener {
-            val noteText = input.text.toString().trim()
+        btnPositive?.text = "SAVE"
+        btnPositive?.setOnClickListener {
+            val noteText = input?.text?.toString()?.trim() ?: ""
             if (noteText.isNotEmpty()) {
                 saveNewNote(summary = noteText, tag = if (currentFilter != "All") currentFilter else "Personal")
             }
@@ -1476,6 +1505,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+        input?.post {
+            input.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun saveNewNote(summary: String, tag: String = "Personal", imagePath: String = "", audioPath: String = "") {
@@ -1495,79 +1529,85 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showRenameNoteDialog(noteObj: JSONObject, index: Int, jsonArray: JSONArray) {
-        val dialog = android.app.Dialog(this, R.style.ThemedDialog)
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
         dialog.setContentView(R.layout.dialog_glass_input)
+        applyDialogSurface(dialog)
 
-        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-        dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        dialog.window?.setGravity(Gravity.BOTTOM)
-        
-        val params = dialog.window?.attributes
-        params?.y = (72 * resources.displayMetrics.density).toInt()
-        dialog.window?.attributes = params
+        dialog.window?.let { window ->
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            window.setGravity(Gravity.BOTTOM)
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+            val params = window.attributes
+            params?.y = (72 * resources.displayMetrics.density).toInt()
+            window.attributes = params
+        }
 
-        dialog.findViewById<TextView>(R.id.dialogTitle).text = "Rename Note"
+        dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "Rename Note"
 
         val input = dialog.findViewById<EditText>(R.id.dialogInput)
         val currentName = noteObj.optString("summary", "")
-        input.setText(currentName)
-        input.setSelection(currentName.length)
-        input.requestFocus()
+        input?.setText(currentName)
+        input?.setSelection(currentName.length)
 
         val btnNegative = dialog.findViewById<TextView>(R.id.btnNegative)
         val btnPositive = dialog.findViewById<TextView>(R.id.btnPositive)
-        
+
         btnNegative?.addApplePressEffect()
         btnPositive?.addApplePressEffect()
 
-        btnNegative.text = "CANCEL"
-        btnNegative.setOnClickListener { dialog.dismiss() }
+        btnNegative?.text = "CANCEL"
+        btnNegative?.setOnClickListener { dialog.dismiss() }
 
-        btnPositive.text = "SAVE"
-        btnPositive.setOnClickListener {
-            val newTitle = input.text.toString().trim()
+        btnPositive?.text = "SAVE"
+        btnPositive?.setOnClickListener {
+            val newTitle = input?.text?.toString()?.trim() ?: ""
             if (newTitle.isNotEmpty()) {
                 noteObj.put("summary", newTitle)
                 jsonArray.put(index, noteObj)
                 prefs.edit().putString("notes_array", jsonArray.toString()).apply()
                 loadDataToMemory()
-                refreshUI()
+                refreshUI(animateEntrance = false)
             }
             dialog.dismiss()
         }
 
         dialog.show()
+        input?.post {
+            input.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun showDeleteNoteDialog(index: Int, jsonArray: JSONArray) {
-        val dialog = android.app.Dialog(this, R.style.ThemedDialog)
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
         dialog.setContentView(R.layout.dialog_glass)
+        applyDialogSurface(dialog)
 
-        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
-        dialog.findViewById<TextView>(R.id.dialogTitle).text = "Delete Note"
-        dialog.findViewById<TextView>(R.id.dialogMessage).text = "Are you sure you want to permanently delete this memory?"
+        dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "Delete Note"
+        dialog.findViewById<TextView>(R.id.dialogMessage)?.text = "Are you sure you want to permanently delete this memory?"
 
         val btnNegative = dialog.findViewById<TextView>(R.id.btnNegative)
         val btnPositive = dialog.findViewById<TextView>(R.id.btnPositive)
-        
+
         btnNegative?.addApplePressEffect()
         btnPositive?.addApplePressEffect()
 
-        btnNegative.text = "CANCEL"
-        btnNegative.setOnClickListener { dialog.dismiss() }
+        btnNegative?.text = "CANCEL"
+        btnNegative?.setOnClickListener { dialog.dismiss() }
 
-        btnPositive.text = "DELETE"
-        btnPositive.setOnClickListener {
+        btnPositive?.text = "DELETE"
+        btnPositive?.setOnClickListener {
             jsonArray.remove(index)
             prefs.edit().putString("notes_array", jsonArray.toString()).apply()
             loadDataToMemory()
-            refreshUI()
+            refreshUI(animateEntrance = false)
             Toast.makeText(this, "Note Deleted", Toast.LENGTH_SHORT).show()
             dialog.dismiss()
         }
@@ -1576,20 +1616,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showFullScreenNote(title: String, tag: String, imgPath: String, audioPath: String, index: Int, jsonArray: JSONArray) {
-        val currentTheme = prefs.getString("theme_pref", "dark")
-        val themeRes = when (currentTheme) {
-            "light" -> R.style.Theme_EssentialSpace_FullscreenMenu
-            "black" -> R.style.Theme_EssentialSpace_PitchBlack_FullscreenMenu
-            "glass" -> R.style.Theme_EssentialSpace_Glass_FullscreenMenu
-            else -> R.style.Theme_EssentialSpace_FullscreenMenu
-        }
-        val dialog = android.app.Dialog(this, themeRes)
+        val themeKey = ThemeManager.getCurrentThemeKey(this)
+        val themeRes = ThemeManager.getThemeDialogRes(this)
+        val dialog = ComponentDialog(this, themeRes)
         dialog.setContentView(R.layout.dialog_fullscreen)
+
+        dialog.setCancelable(true)
+        dialog.setCanceledOnTouchOutside(false)
 
         dialog.window?.let { window ->
             window.setWindowAnimations(R.style.IosModalAnimation)
-            if (currentTheme == "glass") {
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            if (themeKey == ThemeManager.THEME_GLASS) {
                 window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+                window.setBackgroundDrawable(ColorDrawable(Color.parseColor("#80000000")))
             }
 
             window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -1599,13 +1639,14 @@ class MainActivity : AppCompatActivity() {
                 hide(WindowInsetsCompat.Type.systemBars())
                 systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
-        
-        dialog.setOnKeyListener { _, keyCode, event ->
-            if (keyCode == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) {
+
+        // Intercept Android 13–16 Predictive Back gestures cleanly inside ComponentDialog so MainActivity never closes!
+        dialog.onBackPressedDispatcher.addCallback(dialog, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
                 val fullTitle = dialog.findViewById<EditText>(R.id.fsTitle)
                 if (fullTitle?.hasFocus() == true) {
                     fullTitle.clearFocus()
@@ -1614,11 +1655,8 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     dialog.dismiss()
                 }
-                true
-            } else {
-                false
             }
-        }
+        })
 
         try {
             val fullImage = dialog.findViewById<ImageView>(R.id.fsImage)
@@ -1639,17 +1677,16 @@ class MainActivity : AppCompatActivity() {
                 ?.setInterpolator(appleOvershoot)
                 ?.start()
 
-            // Dynamically adjust bottom margin based on IME (keyboard) insets
             bottomStack?.let { stack ->
                 ViewCompat.setOnApplyWindowInsetsListener(stack) { v, insets ->
                     val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
                     val sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
                     val bottomMargin = Math.max(imeHeight, sysBars)
-                    
+
                     val params = v.layoutParams as ViewGroup.MarginLayoutParams
                     params.bottomMargin = bottomMargin + (16 * resources.displayMetrics.density).toInt()
                     v.layoutParams = params
-                    
+
                     insets
                 }
             }
@@ -1660,31 +1697,22 @@ class MainActivity : AppCompatActivity() {
 
             val font = getAppTypeface()
             val accentColor = getAccentColor()
+            val primaryTextColor = ThemeManager.getPrimaryColor(this)
 
             fullTitle?.typeface = font
+            fullTitle?.setTextColor(primaryTextColor)
             fullTag?.typeface = font
             if (fullTag != null) {
                 ThemeManager.applyCategoryBadgeStyle(this, fullTag)
             }
             fullPlayBtn?.setColorFilter(accentColor)
+            btnDelete?.setColorFilter(primaryTextColor)
+            btnClose?.setColorFilter(primaryTextColor)
 
-            // When title is clicked, show keyboard and padding pushes it up naturally
             fullTitle?.setOnFocusChangeListener { _, hasFocus ->
                 if (hasFocus) {
                     val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                     imm.showSoftInput(fullTitle, InputMethodManager.SHOW_IMPLICIT)
-                }
-            }
-            
-            // Allow clicking outside the text box/stack to close keyboard smoothly
-            fullImage?.setOnClickListener {
-                if (fullTitle?.hasFocus() == true) {
-                    dialog.window?.let { win ->
-                        androidx.core.view.WindowInsetsControllerCompat(win, fullTitle).hide(WindowInsetsCompat.Type.ime())
-                    }
-                    fullTitle.clearFocus()
-                } else {
-                    showZoomableImage(imgPath)
                 }
             }
 
@@ -1698,7 +1726,7 @@ class MainActivity : AppCompatActivity() {
                         noteObj.put("summary", newName)
                         prefs.edit().putString("notes_array", jsonArray.toString()).apply()
                         loadDataToMemory()
-                        refreshUI()
+                        refreshUI(animateEntrance = false)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -1714,22 +1742,22 @@ class MainActivity : AppCompatActivity() {
                 screenshotWindowCard?.visibility = View.VISIBLE
                 val bitmap = BitmapFactory.decodeFile(imgPath)
                 fullImage?.setImageBitmap(bitmap)
-                
-                // Clicking the screenshot card opens interactive zoom view
+
                 fullImage?.setOnClickListener {
-                    showZoomableImage(imgPath)
+                    if (fullTitle?.hasFocus() == true) {
+                        dialog.window?.let { win ->
+                            androidx.core.view.WindowInsetsControllerCompat(win, fullTitle).hide(WindowInsetsCompat.Type.ime())
+                        }
+                        fullTitle.clearFocus()
+                    } else {
+                        showZoomableImage(imgPath)
+                    }
                 }
             }
 
             fullPlayBtn?.setOnClickListener {
                 if (audioPath.isNotEmpty() && java.io.File(audioPath).exists()) {
-                    Toast.makeText(this, "Playing Audio...", Toast.LENGTH_SHORT).show()
-                    MediaPlayer().apply {
-                        setDataSource(audioPath)
-                        prepare()
-                        start()
-                        setOnCompletionListener { release() }
-                    }
+                    playAudioNote(audioPath)
                 } else {
                     Toast.makeText(this, "No Audio Attached", Toast.LENGTH_SHORT).show()
                 }
@@ -1745,7 +1773,7 @@ class MainActivity : AppCompatActivity() {
 
                             prefs.edit().putString("notes_array", jsonArray.toString()).apply()
                             loadDataToMemory()
-                            refreshUI()
+                            refreshUI(animateEntrance = false)
 
                             Toast.makeText(this, "Name updated", Toast.LENGTH_SHORT).show()
                         } catch (e: Exception) {
@@ -1762,7 +1790,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // PRE-LOAD: Read custom tags just once when opening the dialog to eliminate lag
             val savedTags = prefs.getStringSet("custom_tags", setOf("All", "Work", "Personal")) ?: setOf("All", "Work", "Personal")
             val dynamicTagArray = savedTags.filter { it != "All" }.toTypedArray()
 
@@ -1783,8 +1810,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             btnDelete?.setOnClickListener {
-                showDeleteNoteDialog(index, jsonArray)
                 dialog.dismiss()
+                showDeleteNoteDialog(index, jsonArray)
             }
 
         } catch (e: Exception) {

@@ -15,11 +15,8 @@ import android.view.Display
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.LayoutInflater
-import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import android.view.animation.Animation
-import android.view.animation.AnimationUtils
 import android.widget.ImageView
 import android.widget.TextView
 import org.json.JSONArray
@@ -119,7 +116,6 @@ class KeyMappingService : AccessibilityService() {
         isRecording = false
 
         Thread {
-            // Stop audio recording in background
             try {
                 mediaRecorder?.stop()
             } catch (e: Exception) {
@@ -136,7 +132,6 @@ class KeyMappingService : AccessibilityService() {
             handler.post {
                 NotificationHelper.hideRecordingNotification(this@KeyMappingService)
 
-                // Capture screenshot on release, then save note
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
                         override fun onSuccess(screenshot: ScreenshotResult) {
@@ -212,7 +207,7 @@ class KeyMappingService : AccessibilityService() {
                 PixelFormat.TRANSLUCENT
             )
             params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            params.y = 120 // some top margin
+            params.y = 120
 
             val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
             val view = inflater.inflate(R.layout.floating_note_preview, null)
@@ -223,7 +218,6 @@ class KeyMappingService : AccessibilityService() {
                 view.findViewById<ImageView>(R.id.previewImage).setImageBitmap(bitmap)
             }
 
-            // Use an animator for smooth apple bounce
             view.scaleX = 0.8f
             view.scaleY = 0.8f
             view.alpha = 0f
@@ -256,7 +250,7 @@ class KeyMappingService : AccessibilityService() {
             view.setOnClickListener {
                 try {
                     val intent = Intent(this, MainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                         putExtra("open_note_index", noteIndex)
                     }
                     startActivity(intent)

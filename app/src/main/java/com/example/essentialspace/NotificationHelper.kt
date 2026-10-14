@@ -20,17 +20,17 @@ object NotificationHelper {
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            
+
             val silentChannel = NotificationChannel(CHANNEL_SILENT_ID, "Recording Status", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "Silent background recording indicators"
                 setShowBadge(false)
             }
-            
+
             val alertsChannel = NotificationChannel(CHANNEL_ALERTS_ID, "Note Saved Alerts", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Alerts for newly saved memories"
                 setShowBadge(true)
             }
-            
+
             manager.createNotificationChannel(silentChannel)
             manager.createNotificationChannel(alertsChannel)
         }
@@ -69,10 +69,15 @@ object NotificationHelper {
             if (!hasPermission(context)) return
 
             val intent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra("open_note_index", noteIndex)
             }
-            val pendingIntent = PendingIntent.getActivity(context, noteIndex, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                noteIndex,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
 
             val builder = NotificationCompat.Builder(context, CHANNEL_ALERTS_ID)
                 .setSmallIcon(R.drawable.ic_custom_void_no_bg)

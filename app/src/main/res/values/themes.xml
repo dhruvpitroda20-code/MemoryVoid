@@ -57,10 +57,33 @@
         <item name="postSplashScreenTheme">@style/Theme.EssentialSpace</item>
     </style>
 
-    <!-- Floating Dialog Styles -->
+    <!-- Floating Dialog Base Style -->
     <style name="ThemedDialog" parent="Theme.MaterialComponents.DayNight.Dialog">
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@style/BouncyDialogAnimation</item>
+    </style>
+
+    <!-- Specific Floating Dialog Themes -->
+    <style name="ThemedDialog.Light" parent="Theme.EssentialSpace">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowAnimationStyle">@style/BouncyDialogAnimation</item>
+    </style>
+
+    <style name="ThemedDialog.PitchBlack" parent="Theme.EssentialSpace.PitchBlack">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowAnimationStyle">@style/BouncyDialogAnimation</item>
+    </style>
+
+    <style name="ThemedDialog.Glass" parent="Theme.EssentialSpace.Glass">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowShowWallpaper">true</item>
         <item name="android:windowAnimationStyle">@style/BouncyDialogAnimation</item>
     </style>
 

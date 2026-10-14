@@ -142,7 +142,7 @@
                             android:layout_width="72dp"
                             android:layout_height="72dp"
                             android:layout_marginBottom="8dp"
-                            app:cardBackgroundColor="#1E1E1E"
+                            app:cardBackgroundColor="#000000"
                             app:cardCornerRadius="16dp"
                             app:strokeWidth="0dp">
 
@@ -222,7 +222,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginBottom="8dp"
-                            android:text="System"
+                            android:text="Glass"
                             android:textColor="?android:attr/textColorPrimary"
                             android:textSize="12sp" />
 
