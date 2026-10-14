@@ -1,5 +1,6 @@
 # MemoryVoid 🌌
-<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/405bae61-419b-45f8-a11d-da7c608daff8" />
+
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/55d4be00-23c2-4896-a554-2eed77b7ad54" />
 
 
 > **Instant Voice & Screen Memory Journal for Android.**  
