@@ -51,8 +51,41 @@ class MainActivity : AppCompatActivity() {
     private var searchQuery = ""
     private var currentFilter = "All"
 
+    // High-performance LruCache for decoded note image thumbnails & audio player management
+    private val thumbnailCache = object : androidx.collection.LruCache<String, android.graphics.Bitmap>(30) {}
+    private var activeMediaPlayer: MediaPlayer? = null
+
     // Your lightning-fast in-memory database
     private var masterNotesArray = JSONArray()
+
+    private fun playAudioNote(audioPath: String) {
+        try {
+            activeMediaPlayer?.stop()
+            activeMediaPlayer?.release()
+            activeMediaPlayer = null
+
+            activeMediaPlayer = MediaPlayer().apply {
+                setDataSource(audioPath)
+                prepare()
+                start()
+                setOnCompletionListener {
+                    release()
+                    if (activeMediaPlayer == this) activeMediaPlayer = null
+                }
+            }
+            Toast.makeText(this, "Playing note...", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Could not play audio", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        activeMediaPlayer?.stop()
+        activeMediaPlayer?.release()
+        activeMediaPlayer = null
+    }
 
     private val noteReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -65,42 +98,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 1. Enforce Theme BEFORE super.onCreate()
-        prefs = getSharedPreferences("EssentialNotes", Context.MODE_PRIVATE)
-        
-        // Migrate old boolean to new string pref
-        var currentTheme = prefs.getString("theme_pref", null)
-        if (currentTheme == null) {
-            val isNightMode = prefs.getBoolean("is_night_mode", true)
-            currentTheme = if (isNightMode) "dark" else "light"
-            prefs.edit().putString("theme_pref", currentTheme).apply()
-        }
+        // Enforce Theme via ThemeManager before super.onCreate()
+        prefs = ThemeManager.getPrefs(this)
+        ThemeManager.initActivityTheme(this)
 
-        AppCompatDelegate.setDefaultNightMode(
-            if (currentTheme == "light") AppCompatDelegate.MODE_NIGHT_NO else AppCompatDelegate.MODE_NIGHT_YES
-        )
-
-        // Install Splash Screen FIRST, then force the Pitch Black theme over it if selected.
-        // Otherwise, installSplashScreen() automatically overrides whatever setTheme() we just called!
         installSplashScreen()
-        
-        when (currentTheme) {
-            "black" -> setTheme(R.style.Theme_EssentialSpace_PitchBlack)
-            "glass" -> {
-                setTheme(R.style.Theme_EssentialSpace_Glass)
-                window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                // Hardware window background blur on supported Android versions (Android 12 / S+)
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                    window.setBackgroundBlurRadius(60)
-                }
-            }
-        }
-
         super.onCreate(savedInstanceState)
-
-        // ... rest of your onCreate code ...
-
-        // ... (Be sure to delete the duplicate `prefs = getSharedPreferences...` further down)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
@@ -284,10 +287,28 @@ class MainActivity : AppCompatActivity() {
         setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    v.animate().scaleX(0.92f).scaleY(0.92f).setDuration(100).setInterpolator(appleCurve).start()
+                    try {
+                        v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                    // Set scale pivot dynamically to the exact tap touch location
+                    v.pivotX = event.x.coerceIn(0f, v.width.toFloat())
+                    v.pivotY = event.y.coerceIn(0f, v.height.toFloat())
+                    v.animate()
+                        .scaleX(0.93f)
+                        .scaleY(0.93f)
+                        .setDuration(120)
+                        .setInterpolator(appleCurve)
+                        .start()
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(300).setInterpolator(appleOvershoot).start()
+                    v.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(380)
+                        .setInterpolator(appleOvershoot)
+                        .start()
                 }
             }
             false
@@ -671,10 +692,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getAccentColor(): Int {
-        val primaryColor = android.util.TypedValue().apply {
-            theme.resolveAttribute(android.R.attr.textColorPrimary, this, true)
-        }.data
-        return prefs.getInt("accent_color", primaryColor)
+        return ThemeManager.getAccentColor(this)
     }
 
     private fun getAppIconRes(): Int {
@@ -686,7 +704,7 @@ class MainActivity : AppCompatActivity() {
         dialog.setContentView(R.layout.dialog_appearance)
 
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         dialog.window?.setWindowAnimations(R.style.BouncyDialogAnimation)
 
         // Close Button
@@ -703,58 +721,30 @@ class MainActivity : AppCompatActivity() {
         val radioDark = dialog.findViewById<RadioButton>(R.id.radioDark)
         val radioGlass = dialog.findViewById<RadioButton>(R.id.radioGlass)
 
-        val currentTheme = prefs.getString("theme_pref", "dark")
+        val currentTheme = ThemeManager.getCurrentThemeKey(this)
 
         fun updateThemeSelection(theme: String) {
-            radioLight?.isChecked = theme == "light"
-            radioDark?.isChecked = theme == "dark" || theme == "black"
-            radioGlass?.isChecked = theme == "glass"
+            radioLight?.isChecked = theme == ThemeManager.THEME_LIGHT
+            radioDark?.isChecked = theme == ThemeManager.THEME_DARK || theme == ThemeManager.THEME_BLACK
+            radioGlass?.isChecked = theme == ThemeManager.THEME_GLASS
             
             cardLight?.isSelected = radioLight?.isChecked == true
             cardDark?.isSelected = radioDark?.isChecked == true
             cardGlass?.isSelected = radioGlass?.isChecked == true
         }
-        updateThemeSelection(currentTheme ?: "dark")
-
-        fun applyNewTheme(newTheme: String) {
-            prefs.edit().putString("theme_pref", newTheme).apply()
-            updateThemeSelection(newTheme)
-            val mode = if (newTheme == "light") AppCompatDelegate.MODE_NIGHT_NO else AppCompatDelegate.MODE_NIGHT_YES
-            AppCompatDelegate.setDefaultNightMode(mode)
-            when (newTheme) {
-                "black" -> setTheme(R.style.Theme_EssentialSpace_PitchBlack)
-                "glass" -> setTheme(R.style.Theme_EssentialSpace_Glass)
-                else -> setTheme(R.style.Theme_EssentialSpace)
-            }
-            if (newTheme == "glass") {
-                window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) window.setBackgroundBlurRadius(60)
-            } else {
-                window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) window.setBackgroundBlurRadius(0)
-            }
-            refreshThemeColors()
-        }
+        updateThemeSelection(currentTheme)
 
         cardLight?.addApplePressEffect()
-        cardLight?.setOnClickListener {
-            applyNewTheme("light")
-        }
+        cardLight?.setOnClickListener { ThemeManager.applyTheme(this, ThemeManager.THEME_LIGHT) }
 
         cardDark?.addApplePressEffect()
-        cardDark?.setOnClickListener {
-            applyNewTheme("dark")
-        }
+        cardDark?.setOnClickListener { ThemeManager.applyTheme(this, ThemeManager.THEME_DARK) }
 
         cardGlass?.addApplePressEffect()
-        cardGlass?.setOnClickListener {
-            applyNewTheme("glass")
-        }
+        cardGlass?.setOnClickListener { ThemeManager.applyTheme(this, ThemeManager.THEME_GLASS) }
 
         // Accent Colors
-        val primaryColor = android.util.TypedValue().apply {
-            theme.resolveAttribute(android.R.attr.textColorPrimary, this, true)
-        }.data
+        val primaryColor = ThemeManager.getPrimaryColor(this)
         val colors = intArrayOf(
             primaryColor,                // Primary Theme Color
             Color.parseColor("#2196F3"), // Blue
@@ -770,7 +760,7 @@ class MainActivity : AppCompatActivity() {
 
         fun updateColorContainerIndicators() {
             if (colorContainer == null) return
-            val activeColor = getAccentColor()
+            val activeColor = ThemeManager.getAccentColor(this)
 
             for (i in 0 until colorContainer.childCount) {
                 val itemFrame = colorContainer.getChildAt(i) as? FrameLayout ?: continue
@@ -797,7 +787,6 @@ class MainActivity : AppCompatActivity() {
                 tag = color
             }
 
-            // 1. Outer Selection Ring (Visible when selected)
             val ringView = View(this).apply {
                 layoutParams = FrameLayout.LayoutParams(frameSize, frameSize)
                 background = android.graphics.drawable.GradientDrawable().apply {
@@ -808,7 +797,6 @@ class MainActivity : AppCompatActivity() {
                 visibility = View.INVISIBLE
             }
 
-            // 2. Solid Color Circle
             val circleView = View(this).apply {
                 layoutParams = FrameLayout.LayoutParams(innerSize, innerSize).apply {
                     gravity = Gravity.CENTER
@@ -819,7 +807,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // 3. Center Checkmark Icon (Visible when selected)
             val checkView = ImageView(this).apply {
                 layoutParams = FrameLayout.LayoutParams(checkSize, checkSize).apply {
                     gravity = Gravity.CENTER
@@ -835,21 +822,17 @@ class MainActivity : AppCompatActivity() {
 
             itemFrame.addApplePressEffect()
 
-            val isThisSelected = getAccentColor() == color
-            if (isThisSelected) {
+            if (ThemeManager.getAccentColor(this) == color) {
                 ringView.visibility = View.VISIBLE
                 checkView.visibility = View.VISIBLE
             }
 
             itemFrame.setOnClickListener {
-                val currentSaved = getAccentColor()
-
+                val currentSaved = ThemeManager.getAccentColor(this)
                 if (currentSaved == color && color != primaryColor) {
-                    // Reset to default primary theme color
-                    prefs.edit().remove("accent_color").apply()
+                    ThemeManager.setAccentColor(this, null)
                 } else {
-                    // Select new accent color
-                    prefs.edit().putInt("accent_color", color).apply()
+                    ThemeManager.setAccentColor(this, color)
                 }
                 updateColorContainerIndicators()
                 refreshThemeColors()
@@ -861,56 +844,9 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    @android.annotation.SuppressLint("ResourceType")
     private fun refreshThemeColors() {
-        val ta = obtainStyledAttributes(intArrayOf(
-            android.R.attr.colorBackground,
-            android.R.attr.textColorPrimary,
-            android.R.attr.textColorSecondary,
-            com.google.android.material.R.attr.colorSurface,
-            com.google.android.material.R.attr.colorSurfaceVariant
-        ))
-        val colorBackground = ta.getColor(0, Color.BLACK)
-        val textColorPrimary = ta.getColor(1, Color.WHITE)
-        val textColorSecondary = ta.getColor(2, Color.GRAY)
-        val colorSurfaceVariant = ta.getColor(4, Color.DKGRAY)
-        ta.recycle()
-        
-        val accent = getAccentColor()
-        val tf = getAppTypeface()
-
-        // Apply dynamically to Main Activity Views without restarting
-        findViewById<View>(android.R.id.content)?.rootView?.setBackgroundColor(colorBackground)
-        
-        val tvHome = findViewById<TextView>(R.id.tvHome)
-        tvHome?.setTextColor(textColorPrimary)
-        tvHome?.typeface = tf
-        
-        findViewById<ImageButton>(R.id.btnMenu)?.setColorFilter(textColorPrimary)
-        
-        findViewById<View>(R.id.topFadeOverlay)?.background = ContextCompat.getDrawable(this, R.drawable.bg_top_fade)
-        findViewById<View>(R.id.bottomFadeOverlay)?.background = ContextCompat.getDrawable(this, R.drawable.bg_bottom_fade)
-        
-        val dockCard = findViewById<com.google.android.material.card.MaterialCardView>(R.id.dockCard)
-        dockCard?.setCardBackgroundColor(colorSurfaceVariant)
-        dockCard?.strokeColor = accent
-        dockCard?.strokeWidth = (1 * resources.displayMetrics.density).toInt()
-        
-        val btnSearchBubble = findViewById<ImageButton>(R.id.btnSearchBubble)
-        btnSearchBubble?.setColorFilter(accent)
-        btnSearchBubble?.background = ContextCompat.getDrawable(this, R.drawable.bg_glass_circle)
-        
-        val searchBar = findViewById<EditText>(R.id.searchBar)
-        searchBar?.setTextColor(textColorPrimary)
-        searchBar?.setHintTextColor(textColorSecondary)
-        searchBar?.typeface = tf
-        
-        findViewById<ImageView>(R.id.searchIconExpanded)?.setColorFilter(accent)
-
-        // Re-load dynamic tags to update active/inactive pill colors
+        ThemeManager.applyThemeColorsToMain(this)
         loadDynamicTags()
-        
-        // Re-inflate all notes to apply the new theme to the list instantly
         refreshUI()
     }
 
@@ -1038,13 +974,9 @@ class MainActivity : AppCompatActivity() {
         val standardFont = getAppTypeface()
         val accentColor = getAccentColor()
 
-        // Dynamically resolve theme colors for 100% contrast active pill over dock
-        val typedValuePrimary = android.util.TypedValue()
-        theme.resolveAttribute(android.R.attr.textColorPrimary, typedValuePrimary, true)
-
-        val typedValueBackground = android.util.TypedValue()
-        theme.resolveAttribute(android.R.attr.colorBackground, typedValueBackground, true)
-        val activeTextColor = typedValueBackground.data
+        // Dynamically calculate contrast text color for active pill
+        val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(accentColor)
+        val activeTextColor = if (luminance > 0.55) Color.BLACK else Color.WHITE
 
         val typedValueSecondary = android.util.TypedValue()
         theme.resolveAttribute(android.R.attr.textColorSecondary, typedValueSecondary, true)
@@ -1223,7 +1155,11 @@ class MainActivity : AppCompatActivity() {
         val jsonArray = masterNotesArray
         val inflater = layoutInflater
 
-        // Launch a coroutine to handle heavy processing (like bitmap decoding) efficiently without blocking UI
+        // Cache font, accent color, and date formatter OUTSIDE loop for maximum performance
+        val font = getAppTypeface()
+        val accentColor = getAccentColor()
+        val sdf = java.text.SimpleDateFormat("MMM dd, yyyy • hh:mm a", java.util.Locale.getDefault())
+
         lifecycleScope.launch {
             for (i in jsonArray.length() - 1 downTo 0) {
                 val noteObj = jsonArray.getJSONObject(i)
@@ -1232,9 +1168,6 @@ class MainActivity : AppCompatActivity() {
 
                 if (currentFilter != "All" && currentFilter != tags) continue
                 if (searchQuery.isNotEmpty() && !summary.lowercase().contains(searchQuery.lowercase())) continue
-
-                val font = getAppTypeface()
-                val accentColor = getAccentColor()
 
                 val view = inflater.inflate(R.layout.note_item, container, false)
                 val itemTitle = view.findViewById<TextView>(R.id.itemTitle)
@@ -1245,7 +1178,6 @@ class MainActivity : AppCompatActivity() {
                 val dateView = view.findViewById<TextView>(R.id.itemDate)
                 dateView.typeface = font
                 if (timestamp > 0L) {
-                    val sdf = java.text.SimpleDateFormat("MMM dd, yyyy • hh:mm a", java.util.Locale.getDefault())
                     dateView.text = sdf.format(java.util.Date(timestamp))
                 } else {
                     dateView.text = "Just now"
@@ -1255,20 +1187,27 @@ class MainActivity : AppCompatActivity() {
                 val imageView = view.findViewById<ImageView>(R.id.itemImage)
                 val imageContainer = view.findViewById<View>(R.id.imageContainer)
 
-                // Offload bitmap decoding to background thread for much faster UI loading
+                // High-performance image thumbnail loading with LruCache & Coroutines
                 if (imgPath.isNotEmpty() && java.io.File(imgPath).exists()) {
                     imageContainer?.visibility = View.VISIBLE
-                    launch(Dispatchers.IO) {
-                        val options = BitmapFactory.Options().apply {
-                            inJustDecodeBounds = true
-                            BitmapFactory.decodeFile(imgPath, this)
-                            // Scale down significantly for the thumbnail view to save RAM and CPU
-                            inSampleSize = calculateInSampleSize(this, 400, 300)
-                            inJustDecodeBounds = false
-                        }
-                        val bitmap = BitmapFactory.decodeFile(imgPath, options)
-                        withContext(Dispatchers.Main) {
-                            imageView.setImageBitmap(bitmap)
+                    val cachedBitmap = thumbnailCache.get(imgPath)
+                    if (cachedBitmap != null && !cachedBitmap.isRecycled) {
+                        imageView.setImageBitmap(cachedBitmap)
+                    } else {
+                        launch(Dispatchers.IO) {
+                            val options = BitmapFactory.Options().apply {
+                                inJustDecodeBounds = true
+                                BitmapFactory.decodeFile(imgPath, this)
+                                inSampleSize = calculateInSampleSize(this, 400, 300)
+                                inJustDecodeBounds = false
+                            }
+                            val bitmap = BitmapFactory.decodeFile(imgPath, options)
+                            if (bitmap != null) {
+                                thumbnailCache.put(imgPath, bitmap)
+                                withContext(Dispatchers.Main) {
+                                    imageView.setImageBitmap(bitmap)
+                                }
+                            }
                         }
                     }
                 } else {
@@ -1282,13 +1221,7 @@ class MainActivity : AppCompatActivity() {
                 if (audioPath.isNotEmpty() && java.io.File(audioPath).exists()) {
                     playBtn.visibility = View.VISIBLE
                     playBtn.setOnClickListener {
-                        Toast.makeText(this@MainActivity, "Playing note...", Toast.LENGTH_SHORT).show()
-                        MediaPlayer().apply {
-                            setDataSource(audioPath)
-                            prepare()
-                            start()
-                            setOnCompletionListener { release() }
-                        }
+                        playAudioNote(audioPath)
                     }
                 } else {
                     playBtn.visibility = View.GONE
@@ -1297,7 +1230,7 @@ class MainActivity : AppCompatActivity() {
                 val tagView = view.findViewById<TextView>(R.id.itemTag)
                 tagView.text = tags
                 tagView.typeface = font
-                tagView.setTextColor(accentColor)
+                ThemeManager.applyCategoryBadgeStyle(this@MainActivity, tagView)
                 tagView.setOnClickListener {
                     val savedTags = prefs.getStringSet("custom_tags", setOf("All", "Work", "Personal"))?.toMutableSet() ?: mutableSetOf()
                     val tagList = savedTags.filter { it != "All" }.toTypedArray()
@@ -1362,8 +1295,9 @@ class MainActivity : AppCompatActivity() {
         listView.dividerHeight = 0
         listView.setPadding(0, 16, 0, 16)
 
-        val isNightMode = prefs.getBoolean("is_night_mode", true)
-        val dynamicTextColor = if (isNightMode) Color.WHITE else Color.BLACK
+        val typedValuePrimary = android.util.TypedValue()
+        theme.resolveAttribute(android.R.attr.textColorPrimary, typedValuePrimary, true)
+        val dynamicTextColor = typedValuePrimary.data
 
         val adapter = object : ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, tagList) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
@@ -1371,7 +1305,7 @@ class MainActivity : AppCompatActivity() {
 
                 view.setTextColor(dynamicTextColor) // Safely flips text color
                 view.gravity = Gravity.CENTER
-                view.setTypeface(null, Typeface.BOLD)
+                view.typeface = getAppTypeface()
                 view.isSingleLine = true
                 return view
             }
@@ -1669,6 +1603,22 @@ class MainActivity : AppCompatActivity() {
                 window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
+        
+        dialog.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) {
+                val fullTitle = dialog.findViewById<EditText>(R.id.fsTitle)
+                if (fullTitle?.hasFocus() == true) {
+                    fullTitle.clearFocus()
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.hideSoftInputFromWindow(fullTitle.windowToken, 0)
+                } else {
+                    dialog.dismiss()
+                }
+                true
+            } else {
+                false
+            }
+        }
 
         try {
             val fullImage = dialog.findViewById<ImageView>(R.id.fsImage)
@@ -1713,7 +1663,9 @@ class MainActivity : AppCompatActivity() {
 
             fullTitle?.typeface = font
             fullTag?.typeface = font
-            fullTag?.setTextColor(accentColor)
+            if (fullTag != null) {
+                ThemeManager.applyCategoryBadgeStyle(this, fullTag)
+            }
             fullPlayBtn?.setColorFilter(accentColor)
 
             // When title is clicked, show keyboard and padding pushes it up naturally
@@ -1756,9 +1708,17 @@ class MainActivity : AppCompatActivity() {
             fullTitle?.setText(title)
             fullTag?.text = tag
 
+            val screenshotWindowCard = dialog.findViewById<View>(R.id.screenshotWindowCard)
+
             if (imgPath.isNotEmpty() && java.io.File(imgPath).exists()) {
+                screenshotWindowCard?.visibility = View.VISIBLE
                 val bitmap = BitmapFactory.decodeFile(imgPath)
                 fullImage?.setImageBitmap(bitmap)
+                
+                // Clicking the screenshot card opens interactive zoom view
+                fullImage?.setOnClickListener {
+                    showZoomableImage(imgPath)
+                }
             }
 
             fullPlayBtn?.setOnClickListener {

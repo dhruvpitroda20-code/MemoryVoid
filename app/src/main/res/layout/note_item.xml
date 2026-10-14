@@ -77,7 +77,7 @@
                 android:id="@+id/itemTag"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_glass_dialog"
+                android:background="@drawable/tag_bg"
                 android:fontFamily="sans-serif-medium"
                 android:paddingHorizontal="14dp"
                 android:paddingVertical="7dp"

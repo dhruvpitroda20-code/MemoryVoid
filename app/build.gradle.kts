@@ -20,6 +20,12 @@ android {
 
     buildTypes {
         release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
@@ -36,7 +42,6 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("com.github.chrisbanes:PhotoView:2.3.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
-    implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("com.squareup.okhttp3:okhttp:5.5.0")
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.appcompat)

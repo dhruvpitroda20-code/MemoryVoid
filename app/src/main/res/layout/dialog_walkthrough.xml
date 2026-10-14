@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@drawable/bg_glass_dialog"
@@ -171,7 +172,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="Tap '+' at top-right to type notes. Customize theme cards and accent colors in Appearance."
+                        android:text="Tap '✏️' at top-right to type notes. Customize theme cards and accent colors in Appearance."
                         android:textColor="?android:attr/textColorSecondary"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -192,14 +193,15 @@
             android:id="@+id/btnWalkthroughSettings"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="sans-serif-medium"
             android:paddingHorizontal="16dp"
             android:paddingVertical="12dp"
             android:text="PERMISSIONS"
             android:textColor="?android:attr/textColorSecondary"
             android:textSize="14sp"
-            android:fontFamily="sans-serif-medium"
-            android:clickable="true"
-            android:focusable="true" />
+            tools:ignore="TouchTargetSizeCheck" />
 
         <TextView
             android:id="@+id/btnWalkthroughGetStarted"
@@ -207,15 +209,16 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="12dp"
             android:background="@drawable/bg_active_pill"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="sans-serif-medium"
             android:paddingHorizontal="24dp"
             android:paddingVertical="12dp"
             android:text="GET STARTED"
             android:textColor="?android:attr/colorBackground"
             android:textSize="14sp"
             android:textStyle="bold"
-            android:fontFamily="sans-serif-medium"
-            android:clickable="true"
-            android:focusable="true" />
+            tools:ignore="TouchTargetSizeCheck" />
     </LinearLayout>
 
 </LinearLayout>

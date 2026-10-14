@@ -90,69 +90,79 @@ class KeyMappingService : AccessibilityService() {
         currentImageFile = File(filesDir, "screen_$timestamp.png")
         currentAudioFile = File(filesDir, "audio_$timestamp.mp4")
 
-        try {
-            mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                MediaRecorder(this)
-            } else {
-                @Suppress("DEPRECATION")
-                MediaRecorder()
-            }).apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
-                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setOutputFile(currentAudioFile?.absolutePath)
-                prepare()
-                start()
+        Thread {
+            try {
+                mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    MediaRecorder(this@KeyMappingService)
+                } else {
+                    @Suppress("DEPRECATION")
+                    MediaRecorder()
+                }).apply {
+                    setAudioSource(MediaRecorder.AudioSource.MIC)
+                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                    setOutputFile(currentAudioFile?.absolutePath)
+                    prepare()
+                    start()
+                }
+                handler.post {
+                    NotificationHelper.showRecordingStarted(this@KeyMappingService)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                mediaRecorder = null
             }
-            NotificationHelper.showRecordingStarted(this)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            mediaRecorder = null
-        }
+        }.start()
     }
 
     private fun captureScreenshotAndSaveNote() {
         isRecording = false
 
-        // Stop audio recording
-        try {
-            mediaRecorder?.stop()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
+        Thread {
+            // Stop audio recording in background
             try {
-                mediaRecorder?.release()
+                mediaRecorder?.stop()
             } catch (e: Exception) {
                 e.printStackTrace()
+            } finally {
+                try {
+                    mediaRecorder?.release()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                mediaRecorder = null
             }
-            mediaRecorder = null
-        }
 
-        NotificationHelper.hideRecordingNotification(this)
+            handler.post {
+                NotificationHelper.hideRecordingNotification(this@KeyMappingService)
 
-        // Capture screenshot on release, then save note
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
-                override fun onSuccess(screenshot: ScreenshotResult) {
-                    try {
-                        val bitmap = Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
-                        bitmap?.let {
-                            FileOutputStream(currentImageFile).use { out ->
-                                it.compress(Bitmap.CompressFormat.PNG, 100, out)
-                            }
+                // Capture screenshot on release, then save note
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+                        override fun onSuccess(screenshot: ScreenshotResult) {
+                            Thread {
+                                try {
+                                    val bitmap = Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
+                                    bitmap?.let {
+                                        FileOutputStream(currentImageFile).use { out ->
+                                            it.compress(Bitmap.CompressFormat.PNG, 100, out)
+                                        }
+                                    }
+                                } catch (e: Exception) { e.printStackTrace() }
+                                handler.post { saveNoteToStorage() }
+                            }.start()
                         }
-                    } catch (e: Exception) { e.printStackTrace() }
-                    saveNoteToStorage()
-                }
 
-                override fun onFailure(errorCode: Int) {
-                    saveNoteToStorage()
+                        override fun onFailure(errorCode: Int) {
+                            handler.post { saveNoteToStorage() }
+                        }
+                    })
+                } else {
+                    performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+                    handler.postDelayed({ saveNoteToStorage() }, 500)
                 }
-            })
-        } else {
-            performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
-            handler.postDelayed({ saveNoteToStorage() }, 500)
-        }
+            }
+        }.start()
     }
 
     private fun saveNoteToStorage() {

@@ -5,28 +5,49 @@
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
 
-    <!-- BACKGROUND / CENTER: Edge-to-Edge Image -->
-    <ImageView
-        android:id="@+id/fsImage"
+    <!-- TOP/CENTER: Floating Screenshot Preview Window starting under status bar (marginTop 48dp) up to floating above the bottom dock -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/screenshotWindowCard"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:scaleType="fitCenter"
-        android:contentDescription="Fullscreen Screenshot View" />
+        android:layout_alignParentTop="true"
+        android:layout_above="@+id/fullscreenBottomStack"
+        android:layout_marginTop="48dp"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="12dp"
+        app:cardBackgroundColor="?attr/colorSurfaceVariant"
+        app:strokeWidth="0dp"
+        app:cardElevation="4dp"
+        app:cardCornerRadius="24dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/fsImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter"
+            android:contentDescription="Screenshot View"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground" />
+    </com.google.android.material.card.MaterialCardView>
 
     <!-- BOTTOM GRADIENT OVERLAY -->
     <View
         android:layout_width="match_parent"
         android:layout_height="220dp"
         android:layout_alignParentBottom="true"
-        android:background="@drawable/bg_bottom_fade" />
+        android:background="@drawable/bg_bottom_fade"
+        android:clickable="false"
+        android:focusable="false" />
 
-    <!-- BOTTOM CONTROLS STACK (Docks & Input placed at bottom for easy one-handed access) -->
+    <!-- BOTTOM CONTROLS STACK (Floating Dock placed at bottom) -->
     <LinearLayout
         android:id="@+id/fullscreenBottomStack"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_alignParentBottom="true"
-        android:layout_marginHorizontal="20dp"
+        android:layout_marginHorizontal="16dp"
         android:layout_marginBottom="16dp"
         android:orientation="vertical"
         android:gravity="center_horizontal">
@@ -34,7 +55,7 @@
         <!-- Top Row: Category, Play, Delete Dock (Matching 56dp height) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/bottomControls"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="56dp"
             android:layout_marginBottom="10dp"
             app:cardBackgroundColor="?attr/colorSurfaceVariant"
@@ -43,7 +64,7 @@
             app:cardCornerRadius="100dp">
 
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
@@ -52,17 +73,20 @@
                 <!-- Category Pill -->
                 <TextView
                     android:id="@+id/fsTag"
-                    android:layout_width="wrap_content"
-                    android:layout_height="match_parent"
+                    android:layout_width="0dp"
+                    android:layout_height="35dp"
                     android:layout_marginHorizontal="6dp"
-                    android:paddingHorizontal="16dp"
-                    android:gravity="center"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:textSize="15sp"
-                    android:fontFamily="sans-serif-medium"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackground"
                     android:clickable="true"
+                    android:ellipsize="end"
                     android:focusable="true"
-                    android:background="?attr/selectableItemBackground" />
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:paddingHorizontal="12dp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="14sp" />
 
                 <!-- Divider -->
                 <View

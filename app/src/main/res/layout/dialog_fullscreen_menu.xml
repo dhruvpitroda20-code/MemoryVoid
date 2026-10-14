@@ -139,7 +139,6 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Settings"
                 android:src="@drawable/ic_settings"
-                android:translationY="10dp"
                 app:tint="?android:attr/textColorPrimary" />
         </RelativeLayout>
     </LinearLayout>
