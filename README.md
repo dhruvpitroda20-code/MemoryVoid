@@ -1,4 +1,5 @@
 # MemoryVoid 🌌
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/ed322244-d48d-4727-9d1c-d3bd87ff2fcc" />
 
 > **Instant Voice & Screen Memory Journal for Android.**  
 > Effortlessly capture what's on your screen and record your voice with a single hardware gesture.
@@ -48,26 +49,6 @@ Category badges on memory cards and the full-screen viewer dynamically adapt to 
 
 ### ✏️ Direct In-App Note Creation
 - Tap the `+` button in the top bar to write and save custom text notes directly inside the app.
-
----
-
-## 📸 Screenshots & Diagrams
-
-```
-+-------------------------------------------------------------+
-|  [Home]                                          [✏️]  [⚙️]  |
-|                                                             |
-|  +-------------------------------------------------------+  |
-|  |  [ Screenshot Thumbnail Image ]                       |  |
-|  |  Memory Title - 03/30/25 • 04:15 PM                 |  |
-|  |  [ Personal ]                  (▶)  (⋮)           |  |
-|  +-------------------------------------------------------+  |
-|                                                             |
-|  +-------------------------------------------------------+  |
-|  | ( All ) ( Work ) ( Personal )                    (🔍) |  |
-|  +-------------------------------------------------------+  |
-+-------------------------------------------------------------+
-```
 
 ---
 
