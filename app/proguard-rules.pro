@@ -12,3 +12,7 @@
 -dontwarn kotlinx.coroutines.**
 
 -keep class com.github.chrisbanes.photoview.** { *; }
+
+# Keep Kotlin standard library classes to prevent invalid cross-package class merging/repackaging
+-keep class kotlin.** { *; }
+-keep class kotlinx.** { *; }
