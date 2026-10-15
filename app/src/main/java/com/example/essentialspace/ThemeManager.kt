@@ -7,7 +7,6 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
-import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -58,12 +57,13 @@ object ThemeManager {
             THEME_GLASS -> {
                 activity.setTheme(R.style.Theme_EssentialSpace_Glass)
                 activity.window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                activity.window.setBackgroundDrawable(ColorDrawable(Color.parseColor("#66000000")))
+                // Less transparent (#99000000 = 60% dark scrim) for much better readability over bright wallpapers
+                activity.window.setBackgroundDrawable(ColorDrawable(Color.parseColor("#99000000")))
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    activity.window.setBackgroundBlurRadius(60)
+                    activity.window.setBackgroundBlurRadius(70)
                 }
             }
-            else -> { // THEME_BLACK & THEME_DARK -> Pure Pitch Black (#000000)
+            else -> { // THEME_BLACK
                 activity.setTheme(R.style.Theme_EssentialSpace_PitchBlack)
                 activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -78,7 +78,6 @@ object ThemeManager {
         val mode = if (themeKey == THEME_LIGHT) AppCompatDelegate.MODE_NIGHT_NO else AppCompatDelegate.MODE_NIGHT_YES
         AppCompatDelegate.setDefaultNightMode(mode)
 
-        // Instant clean activity restart with zero animation delay and clean intent
         val cleanIntent = android.content.Intent(activity, activity::class.java)
         activity.finish()
         activity.startActivity(cleanIntent)
@@ -109,6 +108,43 @@ object ThemeManager {
             prefs.edit().remove(KEY_ACCENT).commit()
         } else {
             prefs.edit().putInt(KEY_ACCENT, color).commit()
+        }
+    }
+
+    fun getCardStrokeColor(context: Context, customColorHex: String = ""): Int {
+        if (customColorHex.isNotEmpty()) {
+            return try {
+                val parsed = Color.parseColor(customColorHex)
+                ColorUtils.blendARGB(parsed, Color.WHITE, 0.28f)
+            } catch (e: Exception) {
+                Color.parseColor("#4DFFFFFF")
+            }
+        }
+        return when (getCurrentThemeKey(context)) {
+            THEME_LIGHT -> Color.parseColor("#D0D5DD")
+            THEME_GLASS -> Color.parseColor("#4DFFFFFF") // Crisp 30% white frosted glass border
+            else -> Color.parseColor("#26FFFFFF") // Subtle 15% white border in Pitch Black
+        }
+    }
+
+    fun resolveNoteCardBackground(context: Context, customColorHex: String = ""): Int {
+        val themeKey = getCurrentThemeKey(context)
+        if (customColorHex.isNotEmpty()) {
+            try {
+                val baseColor = Color.parseColor(customColorHex)
+                return when (themeKey) {
+                    THEME_LIGHT -> ColorUtils.blendARGB(Color.WHITE, baseColor, 0.40f)
+                    THEME_GLASS -> ColorUtils.setAlphaComponent(baseColor, 215) // 84% opacity for Glass visibility
+                    else -> baseColor
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return when (themeKey) {
+            THEME_LIGHT -> Color.WHITE
+            THEME_GLASS -> Color.parseColor("#D9161920") // Less transparent (85% opacity) for strong Glass contrast
+            else -> Color.parseColor("#121212")
         }
     }
 
@@ -154,14 +190,14 @@ object ThemeManager {
                 secondaryText = Color.parseColor("#5C6270")
             }
             THEME_GLASS -> {
-                bgDrawable.setColor(Color.parseColor("#CC161920"))
-                bgDrawable.setStroke((1 * density).toInt(), Color.parseColor("#4DFFFFFF"))
+                bgDrawable.setColor(Color.parseColor("#E6161920")) // 90% opacity for crisp Glass dialog visibility
+                bgDrawable.setStroke((1.2f * density).toInt(), Color.parseColor("#59FFFFFF"))
                 primaryText = Color.WHITE
                 secondaryText = Color.parseColor("#D0D5DD")
             }
             else -> { // THEME_BLACK
                 bgDrawable.setColor(Color.parseColor("#141414"))
-                bgDrawable.setStroke((1 * density).toInt(), Color.parseColor("#2A2A2A"))
+                bgDrawable.setStroke((1 * density).toInt(), Color.parseColor("#2E2E2E"))
                 primaryText = Color.WHITE
                 secondaryText = Color.parseColor("#98A2B3")
             }
@@ -171,10 +207,29 @@ object ThemeManager {
         tintDialogChildren(view, primaryText, secondaryText)
     }
 
+    fun applySwitchAccentColor(context: Context, switchView: SwitchCompat) {
+        val accent = getAccentColor(context)
+        val themeKey = getCurrentThemeKey(context)
+
+        val states = arrayOf(
+            intArrayOf(android.R.attr.state_checked),
+            intArrayOf(-android.R.attr.state_checked)
+        )
+
+        val thumbOffColor = if (themeKey == THEME_LIGHT) Color.parseColor("#98A2B3") else Color.parseColor("#888888")
+        val thumbOnColor = accent
+
+        val trackOnColor = ColorUtils.setAlphaComponent(accent, 115)
+        val trackOffColor = if (themeKey == THEME_LIGHT) Color.parseColor("#D0D5DD") else Color.parseColor("#383838")
+
+        switchView.thumbTintList = android.content.res.ColorStateList(states, intArrayOf(thumbOnColor, thumbOffColor))
+        switchView.trackTintList = android.content.res.ColorStateList(states, intArrayOf(trackOnColor, trackOffColor))
+    }
+
     private fun tintDialogChildren(view: View, primaryText: Int, secondaryText: Int) {
         when (view) {
             is SwitchCompat -> {
-                // Keep custom switch styling intact
+                applySwitchAccentColor(view.context, view)
             }
             is EditText -> {
                 view.setTextColor(primaryText)
@@ -196,7 +251,6 @@ object ThemeManager {
                 if (view.id == R.id.btnCloseAppearance) {
                     view.setColorFilter(secondaryText)
                 } else if (view.tag == null) {
-                    // Only tint icons that aren't dynamic accent color checkmarks
                     view.setColorFilter(primaryText)
                 }
             }
@@ -226,8 +280,8 @@ object ThemeManager {
                 textColor = Color.WHITE
             }
             THEME_GLASS -> {
-                bgDrawable.setColor(Color.parseColor("#26FFFFFF"))
-                bgDrawable.setStroke((1 * density).toInt(), Color.parseColor("#4DFFFFFF"))
+                bgDrawable.setColor(Color.parseColor("#33FFFFFF"))
+                bgDrawable.setStroke((1 * density).toInt(), Color.parseColor("#66FFFFFF"))
                 textColor = Color.WHITE
             }
             else -> {
@@ -260,14 +314,15 @@ object ThemeManager {
                 activity.window.setBackgroundDrawable(ColorDrawable(colorBackground))
             }
             THEME_GLASS -> {
-                colorBackground = Color.parseColor("#66000000")
+                // Less transparent (#99000000 = 60% dark scrim) for much better card & text contrast
+                colorBackground = Color.parseColor("#99000000")
                 textColorPrimary = Color.WHITE
                 textColorSecondary = Color.parseColor("#E6E6E6")
-                colorSurfaceVariant = Color.parseColor("#CC12141A")
+                colorSurfaceVariant = Color.parseColor("#E6161920")
                 activity.window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
                 activity.window.setBackgroundDrawable(ColorDrawable(colorBackground))
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    activity.window.setBackgroundBlurRadius(60)
+                    activity.window.setBackgroundBlurRadius(70)
                 }
             }
             else -> { // THEME_BLACK
@@ -280,31 +335,26 @@ object ThemeManager {
             }
         }
 
-        // Configure Light/Dark Status Bar Icons
         WindowCompat.getInsetsController(activity.window, activity.window.decorView).isAppearanceLightStatusBars = (themeKey == THEME_LIGHT)
 
-        // Ensure content container & activity_main root don't block live wallpaper in Glass mode
         val contentView = activity.findViewById<ViewGroup>(android.R.id.content)
         contentView?.setBackgroundColor(Color.TRANSPARENT)
         contentView?.getChildAt(0)?.setBackgroundColor(if (themeKey == THEME_GLASS) Color.TRANSPARENT else colorBackground)
 
-        // Title and Icons Tint
         activity.findViewById<TextView>(R.id.tvHome)?.setTextColor(textColorPrimary)
         activity.findViewById<ImageButton>(R.id.btnMenu)?.setColorFilter(textColorPrimary)
         activity.findViewById<ImageButton>(R.id.btnCreateNote)?.setColorFilter(textColorPrimary)
 
-        // Dynamic Gradient Overlays matching colorBackground
         val topFade = activity.findViewById<View>(R.id.topFadeOverlay)
         val bottomFade = activity.findViewById<View>(R.id.bottomFadeOverlay)
 
-        val startAlpha = if (themeKey == THEME_GLASS) 0x55 else 0xCC
+        val startAlpha = if (themeKey == THEME_GLASS) 0x88 else 0xCC
         val fadeColor = Color.argb(startAlpha, Color.red(colorBackground), Color.green(colorBackground), Color.blue(colorBackground))
         val endColor = Color.argb(0, Color.red(colorBackground), Color.green(colorBackground), Color.blue(colorBackground))
 
         topFade?.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(fadeColor, endColor))
         bottomFade?.background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(fadeColor, endColor))
 
-        // Floating Dock Card & Search Button
         val dockCard = activity.findViewById<com.google.android.material.card.MaterialCardView>(R.id.dockCard)
         dockCard?.setCardBackgroundColor(colorSurfaceVariant)
         dockCard?.strokeColor = accent
@@ -319,7 +369,6 @@ object ThemeManager {
 
         activity.findViewById<ImageView>(R.id.searchIconExpanded)?.setColorFilter(accent)
 
-        // SwipeRefresh Layout Colors
         val swipe = activity.findViewById<SwipeRefreshLayout>(R.id.swipeRefresh)
         swipe?.setColorSchemeColors(accent)
         swipe?.setProgressBackgroundColorSchemeColor(colorSurfaceVariant)

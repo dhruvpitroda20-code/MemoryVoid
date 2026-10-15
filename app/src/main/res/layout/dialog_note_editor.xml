@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/editorRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground">
+
+    <!-- TOP ACTION BAR -->
+    <RelativeLayout
+        android:id="@+id/editorTopBar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_alignParentTop="true"
+        android:paddingHorizontal="12dp">
+
+        <ImageButton
+            android:id="@+id/btnEditorBack"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_exit_fullscreen"
+            android:rotation="180"
+            android:contentDescription="Back and Save"
+            app:tint="?android:attr/textColorPrimary" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/editorTagBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:layout_marginEnd="8dp"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:paddingHorizontal="16dp"
+                android:text="Personal"
+                android:textSize="13sp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <ImageButton
+                android:id="@+id/btnEditorDelete"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_delete"
+                android:contentDescription="Delete Note"
+                app:tint="?android:attr/textColorPrimary" />
+        </LinearLayout>
+    </RelativeLayout>
+
+    <!-- SCROLLABLE CONTENT AREA -->
+    <ScrollView
+        android:id="@+id/editorScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/editorTopBar"
+        android:layout_above="@+id/editorBottomDock"
+        android:fillViewport="true"
+        android:clipToPadding="false"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="32dp">
+
+            <!-- MULTI-IMAGE HORIZONTAL GALLERY STRIP (Screenshots + Added Photos) -->
+            <HorizontalScrollView
+                android:id="@+id/editorImagesScroll"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:scrollbars="none"
+                android:clipToPadding="false"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/editorImagesContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+
+            <!-- MULTI-AUDIO RECORDINGS STACK (All Voice Memos in this Note) -->
+            <LinearLayout
+                android:id="@+id/editorAudiosContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:orientation="vertical"
+                android:visibility="gone" />
+
+            <!-- TITLE INPUT -->
+            <EditText
+                android:id="@+id/editorTitleInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@null"
+                android:fontFamily="sans-serif-medium"
+                android:hint="Title"
+                android:imeOptions="actionNext"
+                android:inputType="textCapSentences|textMultiLine"
+                android:maxLines="3"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textColorHint="?android:attr/textColorSecondary"
+                android:textSize="23sp"
+                android:textStyle="bold" />
+
+            <!-- Edited Timestamp Subtitle -->
+            <TextView
+                android:id="@+id/editorTimestampText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:layout_marginBottom="16dp"
+                android:fontFamily="sans-serif"
+                android:text="Edited just now"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="12sp" />
+
+            <!-- MULTI-LINE BODY INPUT -->
+            <EditText
+                android:id="@+id/editorBodyInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="260dp"
+                android:background="@null"
+                android:fontFamily="sans-serif"
+                android:gravity="top|start"
+                android:hint="Note"
+                android:inputType="textCapSentences|textMultiLine"
+                android:lineSpacingExtra="5dp"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textColorHint="?android:attr/textColorSecondary"
+                android:textSize="16sp" />
+
+            <!-- INTERACTIVE CHECKLIST CONTAINER -->
+            <LinearLayout
+                android:id="@+id/editorChecklistContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/checklistItemsList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <TextView
+                    android:id="@+id/btnAddChecklistItem"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="6dp"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="8dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="+  List item"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:textSize="15sp"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- BOTTOM FLOATING ACTION TOOLBAR (With Palette Strip + New Vector Icons) -->
+    <LinearLayout
+        android:id="@+id/editorBottomDock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="12dp"
+        android:paddingTop="6dp">
+
+        <!-- Pop-up Note Color Palette Strip (Toggled by ic_palette) -->
+        <HorizontalScrollView
+            android:id="@+id/editorColorPaletteScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/editorColorPaletteContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="6dp" />
+        </HorizontalScrollView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/editorBottomCard"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            app:cardBackgroundColor="?attr/colorSurfaceVariant"
+            app:cardCornerRadius="100dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="12dp">
+
+                <!-- 1. Add Photo Icon Button (ic_add_photo) -->
+                <ImageButton
+                    android:id="@+id/btnEditorAddImage"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_add_photo"
+                    android:contentDescription="Add Photo"
+                    app:tint="?android:attr/textColorPrimary" />
+
+                <!-- 2. Record Voice Note Icon Button (ic_mic / ic_stop_record) -->
+                <ImageButton
+                    android:id="@+id/btnEditorRecordAudio"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="4dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_mic"
+                    android:contentDescription="Record Voice Note"
+                    app:tint="?android:attr/textColorPrimary" />
+
+                <!-- 3. Toggle Checklist Icon Button (ic_checklist) -->
+                <ImageButton
+                    android:id="@+id/btnEditorToggleChecklist"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="4dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_checklist"
+                    android:contentDescription="Toggle Checklist"
+                    app:tint="?android:attr/textColorPrimary" />
+
+                <!-- 4. Note Color Palette Icon Button (ic_palette) -->
+                <ImageButton
+                    android:id="@+id/btnEditorPalette"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="4dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_palette"
+                    android:contentDescription="Note Color"
+                    app:tint="?android:attr/textColorPrimary" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <!-- 5. Explicit Save Pill Button -->
+                <TextView
+                    android:id="@+id/btnEditorSave"
+                    android:layout_width="wrap_content"
+                    android:layout_height="38dp"
+                    android:background="@drawable/bg_active_pill"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center"
+                    android:paddingHorizontal="20dp"
+                    android:text="Save"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+
+</RelativeLayout>

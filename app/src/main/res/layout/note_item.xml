@@ -13,6 +13,7 @@
     app:cardCornerRadius="24dp">
 
     <LinearLayout
+        android:id="@+id/noteRootLinear"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical">
@@ -32,21 +33,23 @@
                 android:contentDescription="@string/app_name" />
         </FrameLayout>
 
-        <!-- Content Area -->
+        <!-- Content Area (Vertical stack: Dedicated Title/Date space on top, Actions aligned Bottom-Right) -->
         <LinearLayout
+            android:id="@+id/noteContentRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:padding="16dp">
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="12dp">
 
-            <!-- Title & Date -->
+            <!-- Dedicated Full-Width Space for Title, Body & Date -->
             <LinearLayout
-                android:layout_width="0dp"
+                android:id="@+id/noteTextColumn"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginEnd="12dp">
+                android:orientation="vertical">
 
                 <TextView
                     android:id="@+id/itemTitle"
@@ -61,10 +64,23 @@
                     android:textStyle="bold" />
 
                 <TextView
-                    android:id="@+id/itemDate"
+                    android:id="@+id/itemBody"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif"
+                    android:lineSpacingExtra="2dp"
+                    android:maxLines="4"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:textSize="14sp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/itemDate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
                     android:text="Date"
                     android:textSize="12sp"
                     android:textColor="?android:attr/textColorSecondary"
@@ -72,44 +88,63 @@
                     android:fontFamily="sans-serif" />
             </LinearLayout>
 
-            <!-- Category Pill -->
-            <TextView
-                android:id="@+id/itemTag"
-                android:layout_width="wrap_content"
+            <!-- Bottom-Right Aligned Action Objects (Tag, Play, Menu) -->
+            <LinearLayout
+                android:id="@+id/noteActionsRow"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@drawable/tag_bg"
-                android:fontFamily="sans-serif-medium"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="7dp"
-                android:text="Personal"
-                android:textColor="?android:attr/textColorPrimary"
-                android:textSize="12sp" />
+                android:layout_marginTop="10dp"
+                android:gravity="end|center_vertical"
+                android:orientation="horizontal">
 
-            <!-- Sleek Voice Note Button -->
-            <ImageButton
-                android:id="@+id/itemPlay"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_marginStart="8dp"
-                android:padding="4dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_voice_note"
-                app:tint="?android:attr/textColorPrimary"
-                android:contentDescription="Play audio"
-                android:visibility="gone"
-                tools:visibility="visible" />
+                <!-- Category Pill -->
+                <TextView
+                    android:id="@+id/itemTag"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/tag_bg"
+                    android:fontFamily="sans-serif-medium"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="5dp"
+                    android:text="Personal"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="11sp" />
 
-            <!-- 3-Dots Options Menu Button (Positioned at far right) -->
-            <ImageButton
-                android:id="@+id/itemMenu"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_marginStart="8dp"
-                android:padding="4dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_more_options"
-                app:tint="?android:attr/textColorPrimary"
-                android:contentDescription="Note Options" />
+                <!-- Action Buttons Wrapper -->
+                <LinearLayout
+                    android:id="@+id/itemButtonsRow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical|end"
+                    android:orientation="horizontal">
+
+                    <!-- Sleek Voice Note Button -->
+                    <ImageButton
+                        android:id="@+id/itemPlay"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:layout_marginStart="6dp"
+                        android:padding="4dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_voice_note"
+                        app:tint="?android:attr/textColorPrimary"
+                        android:contentDescription="Play audio"
+                        android:visibility="gone"
+                        tools:visibility="visible" />
+
+                    <!-- 3-Dots Options Menu Button -->
+                    <ImageButton
+                        android:id="@+id/itemMenu"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:layout_marginStart="4dp"
+                        android:padding="4dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_more_options"
+                        app:tint="?android:attr/textColorPrimary"
+                        android:contentDescription="Note Options" />
+                </LinearLayout>
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

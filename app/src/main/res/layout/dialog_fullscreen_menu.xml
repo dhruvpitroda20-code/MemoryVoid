@@ -18,6 +18,8 @@
         android:orientation="vertical"
         android:paddingTop="36dp"
         android:paddingBottom="20dp"
+        android:clipChildren="false"
+        android:clipToPadding="false"
         android:clickable="true"
         android:focusable="true">
 
@@ -46,6 +48,7 @@
                     app:tint="?android:attr/textColorPrimary" />
 
                 <TextView
+                    android:id="@+id/menuTitleText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
@@ -70,7 +73,7 @@
                 app:tint="?android:attr/textColorPrimary" />
         </RelativeLayout>
 
-        <!-- MAIN PANEL VIEW: How to Use -->
+        <!-- MAIN PANEL VIEW -->
         <LinearLayout
             android:id="@+id/mainPanelView"
             android:layout_width="match_parent"
@@ -79,7 +82,9 @@
             android:orientation="vertical"
             android:paddingHorizontal="12dp">
 
+            <!-- GENERAL SECTION -->
             <TextView
+                android:id="@+id/sectionHeaderGeneral"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="General"
@@ -120,6 +125,123 @@
                 android:drawablePadding="14dp"
                 android:gravity="center_vertical"
                 android:background="?attr/selectableItemBackground" />
+
+            <!-- PREFERENCES SECTION CONTAINER -->
+            <LinearLayout
+                android:id="@+id/preferencesSectionContainer"
+                android:tag="preferences_section"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- Divider -->
+                <View
+                    android:id="@+id/sidebarDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="10dp"
+                    android:layout_marginHorizontal="12dp"
+                    android:background="#26888888" />
+
+                <!-- Preferences Header -->
+                <TextView
+                    android:id="@+id/sectionHeaderPreferences"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Preferences"
+                    android:textSize="12sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:fontFamily="sans-serif-medium"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="8dp" />
+
+                <!-- 1. Capture Screenshot Toggle Row -->
+                <LinearLayout
+                    android:id="@+id/rowScreenshotToggle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingVertical="12dp"
+                    android:paddingHorizontal="12dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginEnd="8dp">
+
+                        <TextView
+                            android:id="@+id/tvScreenshotToggleTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Capture Screenshot"
+                            android:textSize="15sp"
+                            android:fontFamily="sans-serif-medium"
+                            android:textColor="?android:attr/textColorPrimary" />
+
+                        <TextView
+                            android:id="@+id/tvScreenshotToggleSub"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Save screen capture with voice note"
+                            android:textSize="12sp"
+                            android:fontFamily="sans-serif"
+                            android:textColor="?android:attr/textColorSecondary" />
+                    </LinearLayout>
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switchCaptureScreenshot"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:thumb="@drawable/switch_thumb_custom"
+                        app:track="@drawable/switch_track_custom"
+                        app:switchMinWidth="48dp"
+                        app:splitTrack="false" />
+                </LinearLayout>
+
+                <!-- 2. Trigger Shortcut Selector Row -->
+                <LinearLayout
+                    android:id="@+id/rowShortcutSelector"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="vertical"
+                    android:paddingVertical="12dp"
+                    android:paddingHorizontal="12dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <TextView
+                        android:id="@+id/tvShortcutTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Trigger Shortcut"
+                        android:textSize="15sp"
+                        android:fontFamily="sans-serif-medium"
+                        android:textColor="?android:attr/textColorPrimary" />
+
+                    <TextView
+                        android:id="@+id/tvCurrentShortcutValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:text="Hold Volume Down (Default)"
+                        android:textSize="12sp"
+                        android:fontFamily="sans-serif-medium"
+                        android:textColor="?android:attr/textColorSecondary" />
+                </LinearLayout>
+
+            </LinearLayout>
+
         </LinearLayout>
 
         <!-- Bottom Footer: Settings Gear Icon at BOTTOM-RIGHT without background -->
@@ -129,7 +251,6 @@
             android:paddingHorizontal="16dp"
             android:paddingTop="12dp">
 
-            <!-- Settings Gear Icon Button on Bottom-Right (No Background) -->
             <ImageButton
                 android:id="@+id/btnSettingsIcon"
                 android:layout_width="40dp"

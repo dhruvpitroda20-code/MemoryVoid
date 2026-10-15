@@ -1,6 +1,8 @@
 package com.example.essentialspace
 
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -9,6 +11,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +21,7 @@ import android.text.TextWatcher
 import android.transition.AutoTransition
 import android.transition.TransitionManager
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -28,6 +32,7 @@ import android.widget.*
 import androidx.activity.ComponentDialog
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -44,6 +49,25 @@ import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        const val PREF_CAPTURE_SCREENSHOT = "capture_screenshot_enabled"
+        const val PREF_SHORTCUT_MODE = "shortcut_mode"
+
+        const val MODE_HOLD_VOL_DOWN = "hold_vol_down"
+        const val MODE_DOUBLE_TAP_HOLD = "double_tap_hold"
+        const val MODE_SEQ_UP_DOWN = "seq_up_down"
+        const val MODE_SCREENSHOT_COMBO = "screenshot_combo"
+        const val MODE_ASSIST_POWER = "assist_power"
+
+        const val ACTION_START_ASSIST_CAPTURE = "com.example.essentialspace.START_ASSIST_CAPTURE"
+
+        const val PREF_CARD_LAYOUT = "card_layout_style"
+        const val LAYOUT_CLASSIC = "classic"   // Void Classic (Full-width stack)
+        const val LAYOUT_BENTO = "bento"       // Bento Grid (2-column masonry)
+        const val LAYOUT_CAPSULE = "capsule"   // Capsule Split (Horizontal thumbnail + text)
+        const val LAYOUT_LEDGER = "ledger"     // Focus Ledger (Minimalist compact list)
+    }
+
     private lateinit var prefs: android.content.SharedPreferences
     private var searchQuery = ""
     private var currentFilter = "All"
@@ -54,6 +78,29 @@ class MainActivity : AppCompatActivity() {
 
     // Your lightning-fast in-memory database
     private var masterNotesArray = JSONArray()
+
+    private var pendingImagePickedCallback: ((String) -> Unit)? = null
+
+    private val pickImageLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            try {
+                val destFile = java.io.File(filesDir, "img_${System.currentTimeMillis()}.jpg")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    java.io.FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                if (destFile.exists() && destFile.length() > 0L) {
+                    pendingImagePickedCallback?.invoke(destFile.absolutePath)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Toast.makeText(this, "Could not attach image", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     private fun playAudioNote(audioPath: String) {
         try {
@@ -184,21 +231,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleIntent(intent: Intent?) {
         intent?.let {
+            if (it.action == Intent.ACTION_ASSIST || it.action == Intent.ACTION_VOICE_COMMAND) {
+                it.action = null
+                val assistBroadcast = Intent(ACTION_START_ASSIST_CAPTURE).apply {
+                    setPackage(packageName)
+                }
+                sendBroadcast(assistBroadcast)
+                moveTaskToBack(true)
+                return
+            }
+
             val openIndex = it.getIntExtra("open_note_index", -1)
             if (openIndex != -1) {
                 it.removeExtra("open_note_index")
                 window.decorView.postDelayed({
                     loadDataToMemory()
-                    val noteObj = masterNotesArray.optJSONObject(openIndex)
-                    if (noteObj != null) {
-                        showFullScreenNote(
-                            noteObj.getString("summary"),
-                            noteObj.optString("tag", "Personal"),
-                            noteObj.optString("image_path", ""),
-                            noteObj.optString("audio_path", ""),
-                            openIndex,
-                            masterNotesArray
-                        )
+                    if (openIndex in 0 until masterNotesArray.length()) {
+                        openFullNoteEditor(editIndex = openIndex)
                     }
                 }, 350)
             }
@@ -227,6 +276,46 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             JSONArray()
         }
+    }
+
+    // Helper: Safely reads all image paths for a note (supports both legacy "image_path" and multi "image_paths")
+    private fun extractImagePaths(noteObj: JSONObject?): MutableList<String> {
+        val list = mutableListOf<String>()
+        if (noteObj == null) return list
+        val arr = noteObj.optJSONArray("image_paths")
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val p = arr.optString(i, "")
+                if (p.isNotEmpty() && java.io.File(p).exists() && !list.contains(p)) {
+                    list.add(p)
+                }
+            }
+        }
+        val legacy = noteObj.optString("image_path", "")
+        if (legacy.isNotEmpty() && java.io.File(legacy).exists() && !list.contains(legacy)) {
+            list.add(0, legacy)
+        }
+        return list
+    }
+
+    // Helper: Safely reads all audio paths for a note (supports both legacy "audio_path" and multi "audio_paths")
+    private fun extractAudioPaths(noteObj: JSONObject?): MutableList<String> {
+        val list = mutableListOf<String>()
+        if (noteObj == null) return list
+        val arr = noteObj.optJSONArray("audio_paths")
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val p = arr.optString(i, "")
+                if (p.isNotEmpty() && java.io.File(p).exists() && !list.contains(p)) {
+                    list.add(p)
+                }
+            }
+        }
+        val legacy = noteObj.optString("audio_path", "")
+        if (legacy.isNotEmpty() && java.io.File(legacy).exists() && !list.contains(legacy)) {
+            list.add(0, legacy)
+        }
+        return list
     }
 
     private fun showZoomableImage(imgPath: String) {
@@ -292,8 +381,14 @@ class MainActivity : AppCompatActivity() {
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
-                    v.pivotX = event.x.coerceIn(0f, v.width.toFloat())
-                    v.pivotY = event.y.coerceIn(0f, v.height.toFloat())
+                    // Keep center pivot for rotated icons (like 180° back/close buttons) so they never jump!
+                    if (v.rotation != 0f || v.rotationX != 0f || v.rotationY != 0f) {
+                        v.pivotX = v.width / 2f
+                        v.pivotY = v.height / 2f
+                    } else {
+                        v.pivotX = event.x.coerceIn(0f, v.width.toFloat())
+                        v.pivotY = event.y.coerceIn(0f, v.height.toFloat())
+                    }
                     v.animate()
                         .scaleX(0.93f)
                         .scaleY(0.93f)
@@ -512,6 +607,16 @@ class MainActivity : AppCompatActivity() {
         return false
     }
 
+    private fun getShortcutDisplayName(mode: String): String {
+        return when (mode) {
+            MODE_DOUBLE_TAP_HOLD -> "Double-Tap & Hold (Vol Up/Down)"
+            MODE_SEQ_UP_DOWN -> "Sequence (Vol Up ➔ Hold Vol Down)"
+            MODE_SCREENSHOT_COMBO -> "Screenshot on Start (Hold Vol Down)"
+            MODE_ASSIST_POWER -> "Power Hold (Digital Assistant)"
+            else -> "Hold Volume Down (Default)"
+        }
+    }
+
     private fun showFullScreenMenu() {
         val currentTheme = ThemeManager.getCurrentThemeKey(this)
         val themeRes = ThemeManager.getThemeDialogRes(this)
@@ -532,7 +637,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val sidebarPanel = dialog.findViewById<View>(R.id.sidebarPanel)
+        val sidebarPanel = dialog.findViewById<ViewGroup>(R.id.sidebarPanel)
+        val primaryColor = ThemeManager.getPrimaryColor(this)
+        val secondaryColor = if (currentTheme == ThemeManager.THEME_LIGHT) Color.parseColor("#5C6270") else Color.parseColor("#98A2B3")
+
         if (sidebarPanel != null) {
             val panelColor = when (currentTheme) {
                 ThemeManager.THEME_LIGHT -> Color.WHITE
@@ -553,7 +661,6 @@ class MainActivity : AppCompatActivity() {
         itemHowToUse?.typeface = font
         itemAppearance?.typeface = font
 
-        val primaryColor = ThemeManager.getPrimaryColor(this)
         dialog.findViewById<ImageView>(R.id.menuLogo)?.apply {
             setImageResource(getAppIconRes())
             setColorFilter(primaryColor)
@@ -562,6 +669,52 @@ class MainActivity : AppCompatActivity() {
         btnSettingsIcon?.setColorFilter(primaryColor)
         itemHowToUse?.setTextColor(primaryColor)
         itemAppearance?.setTextColor(primaryColor)
+
+        // Style headers and title
+        dialog.findViewById<TextView>(R.id.menuTitleText)?.setTextColor(primaryColor)
+        dialog.findViewById<TextView>(R.id.sectionHeaderGeneral)?.setTextColor(secondaryColor)
+        dialog.findViewById<TextView>(R.id.sectionHeaderPreferences)?.setTextColor(secondaryColor)
+
+        // 1. Wire up Capture Screenshot Toggle from XML
+        val rowScreenshotToggle = dialog.findViewById<View>(R.id.rowScreenshotToggle)
+        val tvScreenshotTitle = dialog.findViewById<TextView>(R.id.tvScreenshotToggleTitle)
+        val tvScreenshotSub = dialog.findViewById<TextView>(R.id.tvScreenshotToggleSub)
+        val switchScreenshot = dialog.findViewById<SwitchCompat>(R.id.switchCaptureScreenshot)
+
+        tvScreenshotTitle?.setTextColor(primaryColor)
+        tvScreenshotSub?.setTextColor(secondaryColor)
+
+        if (switchScreenshot != null) {
+            ThemeManager.applySwitchAccentColor(this, switchScreenshot)
+            switchScreenshot.isChecked = prefs.getBoolean(PREF_CAPTURE_SCREENSHOT, true)
+            switchScreenshot.setOnCheckedChangeListener { _, isChecked ->
+                prefs.edit().putBoolean(PREF_CAPTURE_SCREENSHOT, isChecked).apply()
+            }
+        }
+
+        rowScreenshotToggle?.addApplePressEffect()
+        rowScreenshotToggle?.setOnClickListener {
+            if (switchScreenshot != null) {
+                switchScreenshot.isChecked = !switchScreenshot.isChecked
+            }
+        }
+
+        // 2. Wire up Trigger Shortcut Selector Row from XML
+        val rowShortcutSelector = dialog.findViewById<View>(R.id.rowShortcutSelector)
+        val tvShortcutTitle = dialog.findViewById<TextView>(R.id.tvShortcutTitle)
+        val tvCurrentShortcutValue = dialog.findViewById<TextView>(R.id.tvCurrentShortcutValue)
+
+        tvShortcutTitle?.setTextColor(primaryColor)
+        val savedShortcut = prefs.getString(PREF_SHORTCUT_MODE, MODE_HOLD_VOL_DOWN) ?: MODE_HOLD_VOL_DOWN
+        tvCurrentShortcutValue?.text = getShortcutDisplayName(savedShortcut)
+        tvCurrentShortcutValue?.setTextColor(getAccentColor())
+
+        rowShortcutSelector?.addApplePressEffect()
+        rowShortcutSelector?.setOnClickListener {
+            showShortcutSelectorDialog { newMode ->
+                tvCurrentShortcutValue?.text = getShortcutDisplayName(newMode)
+            }
+        }
 
         btnCloseSideBar?.addApplePressEffect()
         btnSettingsIcon?.addApplePressEffect()
@@ -579,8 +732,186 @@ class MainActivity : AppCompatActivity() {
         itemAppearance?.compoundDrawables?.forEach { it?.setTint(primaryColor) }
         itemAppearance?.setOnClickListener { dialog.dismiss(); showAppearanceDialog() }
 
+        // Dynamic bottom padding adjustment so settings icon lifts up above 3-button navigation bar without clipping
+        if (sidebarPanel != null) {
+            btnSettingsIcon?.translationZ = 20f
+            ViewCompat.setOnApplyWindowInsetsListener(sidebarPanel) { v, insets ->
+                val navBarInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+                val density = resources.displayMetrics.density
+                val basePaddingBottom = (20 * density).toInt()
+
+                v.setPadding(
+                    v.paddingLeft,
+                    v.paddingTop,
+                    v.paddingRight,
+                    basePaddingBottom + navBarInset
+                )
+                insets
+            }
+        }
+
         btnSettingsIcon?.setOnClickListener {
             showSettingsPopup()
+        }
+
+        dialog.show()
+    }
+
+    private data class ShortcutOption(
+        val modeKey: String,
+        val title: String,
+        val instruction: String
+    )
+
+    private fun showShortcutSelectorDialog(onSelected: (String) -> Unit) {
+        val options = listOf(
+            ShortcutOption(
+                MODE_HOLD_VOL_DOWN,
+                "Hold Volume Down (Default)",
+                "Press & hold Vol Down to record. Release to capture & save."
+            ),
+            ShortcutOption(
+                MODE_DOUBLE_TAP_HOLD,
+                "Double-Tap & Hold (Vol Up/Down)",
+                "Tap once, then press & hold on the 2nd tap. Normal presses adjust volume."
+            ),
+            ShortcutOption(
+                MODE_SEQ_UP_DOWN,
+                "Sequence (Vol Up ➔ Hold Vol Down)",
+                "Tap Vol Up once, then immediately press & hold Vol Down to record."
+            ),
+            ShortcutOption(
+                MODE_SCREENSHOT_COMBO,
+                "Screenshot on Start (Hold Vol Down)",
+                "Captures screen immediately when held, records voice, and saves on release."
+            ),
+            ShortcutOption(
+                MODE_ASSIST_POWER,
+                "Power Hold (Digital Assistant)",
+                "Set MemoryVoid as Default Assistant. Hold Power to start; hold Power again to stop & save."
+            )
+        )
+
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
+        val density = resources.displayMetrics.density
+        val pad20 = (20 * density).toInt()
+        val pad8 = (8 * density).toInt()
+        val pad10 = (10 * density).toInt()
+
+        val rootLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad20, pad20, pad20, pad20)
+        }
+
+        val titleView = TextView(this).apply {
+            text = "Choose Trigger Shortcut"
+            textSize = 18f
+            typeface = getAppTypeface()
+            setPadding(0, 0, 0, (12 * density).toInt())
+        }
+        rootLayout.addView(titleView)
+
+        val currentMode = prefs.getString(PREF_SHORTCUT_MODE, MODE_HOLD_VOL_DOWN) ?: MODE_HOLD_VOL_DOWN
+        val accentColor = getAccentColor()
+        val primaryTextColor = ThemeManager.getPrimaryColor(this)
+        val secondaryTextColor = if (ThemeManager.getCurrentThemeKey(this) == ThemeManager.THEME_LIGHT) {
+            Color.parseColor("#5C6270")
+        } else {
+            Color.parseColor("#98A2B3")
+        }
+
+        val titleViews = mutableListOf<Pair<TextView, String>>()
+
+        options.forEach { option ->
+            val itemContainer = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(pad8, pad10, pad8, pad10)
+                isClickable = true
+                isFocusable = true
+                addApplePressEffect()
+                setOnClickListener {
+                    prefs.edit().putString(PREF_SHORTCUT_MODE, option.modeKey).apply()
+                    onSelected(option.modeKey)
+                    dialog.dismiss()
+
+                    if (option.modeKey == MODE_ASSIST_POWER) {
+                        showPowerHoldSetupDialog()
+                    }
+                }
+            }
+
+            val itemTitle = TextView(this).apply {
+                text = if (option.modeKey == currentMode) "●  ${option.title}" else "○  ${option.title}"
+                textSize = 15f
+                typeface = getAppTypeface()
+            }
+            titleViews.add(itemTitle to option.modeKey)
+
+            val itemInstruction = TextView(this).apply {
+                text = option.instruction
+                textSize = 12f
+                setPadding((22 * density).toInt(), (2 * density).toInt(), 0, 0)
+                setTextColor(secondaryTextColor)
+            }
+
+            itemContainer.addView(itemTitle)
+            itemContainer.addView(itemInstruction)
+            rootLayout.addView(itemContainer)
+        }
+
+        dialog.setContentView(rootLayout)
+        ThemeManager.applyPopupSurfaceStyle(this, rootLayout)
+
+        titleViews.forEach { (tv, modeKey) ->
+            tv.setTextColor(if (modeKey == currentMode) accentColor else primaryTextColor)
+        }
+
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.90).toInt(),
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        dialog.show()
+    }
+
+    private fun showPowerHoldSetupDialog() {
+        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
+        dialog.setContentView(R.layout.dialog_glass)
+        applyDialogSurface(dialog)
+
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+
+        dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "Setup Power Button Hold"
+        dialog.findViewById<TextView>(R.id.dialogMessage)?.text = """
+            To use Power Hold instead of the Power Off menu:
+            
+            1. Tap 'SET ASSISTANT' below -> tap 'Device assistant app' -> select MemoryVoid.
+            2. In your phone's Settings > System (or Additional Settings) > Power Button, set 'Press and hold the power button' to 'Voice Assistant' (instead of Power Menu).
+        """.trimIndent()
+
+        val btnNegative = dialog.findViewById<TextView>(R.id.btnNegative)
+        val btnPositive = dialog.findViewById<TextView>(R.id.btnPositive)
+
+        btnNegative?.addApplePressEffect()
+        btnPositive?.addApplePressEffect()
+
+        btnNegative?.text = "LATER"
+        btnNegative?.setOnClickListener { dialog.dismiss() }
+
+        btnPositive?.text = "SET ASSISTANT"
+        btnPositive?.setOnClickListener {
+            dialog.dismiss()
+            try {
+                startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
+            } catch (e: Exception) {
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+                } catch (ex: Exception) {
+                    ex.printStackTrace()
+                }
+            }
         }
 
         dialog.show()
@@ -808,8 +1139,8 @@ class MainActivity : AppCompatActivity() {
 
             val ringView = View(this).apply {
                 layoutParams = FrameLayout.LayoutParams(frameSize, frameSize)
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
                     setColor(Color.TRANSPARENT)
                     setStroke((3 * density).toInt(), color)
                 }
@@ -820,8 +1151,8 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = FrameLayout.LayoutParams(innerSize, innerSize).apply {
                     gravity = Gravity.CENTER
                 }
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
                     setColor(color)
                 }
             }
@@ -859,6 +1190,84 @@ class MainActivity : AppCompatActivity() {
             }
 
             colorContainer?.addView(itemFrame)
+        }
+
+        // Card Layout Selector Cards
+        val layoutsContainer = dialog.findViewById<LinearLayout>(R.id.cardLayoutsContainer)
+        if (layoutsContainer != null) {
+            val density = resources.displayMetrics.density
+            val layoutOptions = listOf(
+                Triple(LAYOUT_CLASSIC, "Void Classic", "Editorial Stack"),
+                Triple(LAYOUT_BENTO, "Bento Grid", "2-Col Masonry"),
+                Triple(LAYOUT_CAPSULE, "Capsule Split", "Side Thumbnail"),
+                Triple(LAYOUT_LEDGER, "Focus Ledger", "Compact List")
+            )
+
+            val secondaryTextColor = if (currentTheme == ThemeManager.THEME_LIGHT) {
+                Color.parseColor("#5C6270")
+            } else {
+                Color.parseColor("#98A2B3")
+            }
+
+            fun rebuildLayoutCards() {
+                layoutsContainer.removeAllViews()
+                val activeLayout = prefs.getString(PREF_CARD_LAYOUT, LAYOUT_CLASSIC) ?: LAYOUT_CLASSIC
+                val activeAccent = ThemeManager.getAccentColor(this)
+
+                layoutOptions.forEach { (layoutKey, title, subtitle) ->
+                    val isSelected = layoutKey == activeLayout
+                    val cardWidth = (128 * density).toInt()
+                    val pad12 = (12 * density).toInt()
+
+                    val optionCard = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER_HORIZONTAL
+                        layoutParams = LinearLayout.LayoutParams(cardWidth, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                            marginEnd = (10 * density).toInt()
+                        }
+                        setPadding(pad12, pad12, pad12, pad12)
+                        background = GradientDrawable().apply {
+                            shape = GradientDrawable.RECTANGLE
+                            cornerRadius = 18f * density
+                            val fill = if (currentTheme == ThemeManager.THEME_LIGHT) Color.parseColor("#F2F4F7") else Color.parseColor("#1E1E24")
+                            setColor(fill)
+                            setStroke(
+                                ((if (isSelected) 2f else 1f) * density).toInt(),
+                                if (isSelected) activeAccent else Color.parseColor("#33888888")
+                            )
+                        }
+                        addApplePressEffect()
+                        setOnClickListener {
+                            prefs.edit().putString(PREF_CARD_LAYOUT, layoutKey).apply()
+                            rebuildLayoutCards()
+                            refreshUI(animateEntrance = true)
+                        }
+                    }
+
+                    val tvTitle = TextView(this).apply {
+                        text = if (isSelected) "● $title" else title
+                        textSize = 13f
+                        typeface = getAppTypeface()
+                        gravity = Gravity.CENTER
+                        isSingleLine = true
+                        setTextColor(if (isSelected) activeAccent else primaryColor)
+                    }
+
+                    val tvSub = TextView(this).apply {
+                        text = subtitle
+                        textSize = 11f
+                        gravity = Gravity.CENTER
+                        isSingleLine = true
+                        setPadding(0, (3 * density).toInt(), 0, 0)
+                        setTextColor(secondaryTextColor)
+                    }
+
+                    optionCard.addView(tvTitle)
+                    optionCard.addView(tvSub)
+                    layoutsContainer.addView(optionCard)
+                }
+            }
+            rebuildLayoutCards()
         }
 
         dialog.show()
@@ -937,18 +1346,27 @@ class MainActivity : AppCompatActivity() {
 
         dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "How to Use MemoryVoid"
 
+        val activeMode = prefs.getString(PREF_SHORTCUT_MODE, MODE_HOLD_VOL_DOWN) ?: MODE_HOLD_VOL_DOWN
+        val activeShortcutLabel = getShortcutDisplayName(activeMode)
+
+        val activeHint = when (activeMode) {
+            MODE_DOUBLE_TAP_HOLD -> "Quickly tap Vol Up or Down once, then press & hold on the 2nd tap to record. Release to save."
+            MODE_SEQ_UP_DOWN -> "Tap Vol Up once, then immediately press & hold Vol Down to record. Release to save."
+            MODE_SCREENSHOT_COMBO -> "Press & hold Vol Down to immediately snap a screenshot and record audio. Release to save."
+            MODE_ASSIST_POWER -> "Set MemoryVoid as your Default Digital Assistant. Hold Power button to start recording, then tap the floating pill to stop & save."
+            else -> "Press & hold Vol Down to record your voice note. Release to snap a screenshot and save."
+        }
+
         val tutorialText = """
             Setup:
-            1. Open Navigation Menu > Settings.
-            2. Grant Accessibility to detect the Volume Down shortcut.
-            3. Grant Microphone & Overlay permissions for voice notes and previews.
+            1. Open Sidebar Menu > Settings (bottom-right gear icon).
+            2. Grant Accessibility, Microphone & Background permissions.
+            3. Toggle 'Capture Screenshot' or change your 'Trigger Shortcut' under Preferences.
             
-            Usage:
-            • Press & Hold 'Volume Down': Records your voice note while holding.
-            • Release 'Volume Down': Takes a screenshot and saves your voice note and screen capture together.
-            • Tap '+' (top right) to create a text note directly inside the app.
-            • Tap the 3-dots icon on any note card to rename or delete.
-            • Tap the play button to hear your voice note.
+            Active Shortcut — $activeShortcutLabel:
+            • $activeHint
+            • Normal volume adjustments work without interruption.
+            • Tap '✏️' (top right) to open the full-screen note & checklist editor.
         """.trimIndent()
 
         dialog.findViewById<TextView>(R.id.dialogMessage)?.text = tutorialText
@@ -1178,67 +1596,251 @@ class MainActivity : AppCompatActivity() {
 
         val jsonArray = masterNotesArray
         val inflater = layoutInflater
+        val density = resources.displayMetrics.density
 
         val font = getAppTypeface()
         val accentColor = getAccentColor()
         val themeKey = ThemeManager.getCurrentThemeKey(this)
+        val layoutStyle = prefs.getString(PREF_CARD_LAYOUT, LAYOUT_CLASSIC) ?: LAYOUT_CLASSIC
         val sdf = java.text.SimpleDateFormat("MMM dd, yyyy • hh:mm a", java.util.Locale.getDefault())
 
-        val cardBgColor = when (themeKey) {
-            ThemeManager.THEME_LIGHT -> Color.WHITE
-            ThemeManager.THEME_GLASS -> Color.parseColor("#B3161920")
-            else -> Color.parseColor("#121212")
-        }
         val titleColor = if (themeKey == ThemeManager.THEME_LIGHT) Color.parseColor("#121316") else Color.WHITE
         val dateColor = if (themeKey == ThemeManager.THEME_LIGHT) Color.parseColor("#5C6270") else Color.parseColor("#98A2B3")
 
+        val orderedIndices = (jsonArray.length() - 1 downTo 0).sortedByDescending { idx ->
+            jsonArray.optJSONObject(idx)?.optBoolean("is_pinned", false) == true
+        }
+
+        // For Bento Grid (2-Column Masonry), create two vertical columns inside a horizontal wrapper
+        var leftColumn: LinearLayout? = null
+        var rightColumn: LinearLayout? = null
+        if (layoutStyle == LAYOUT_BENTO) {
+            val pad14 = (14 * density).toInt()
+            val pad6 = (6 * density).toInt()
+            val masonryRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                setPadding(pad14, 0, pad14, 0)
+                isBaselineAligned = false
+            }
+            leftColumn = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = pad6
+                }
+            }
+            rightColumn = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = pad6
+                }
+            }
+            masonryRow.addView(leftColumn)
+            masonryRow.addView(rightColumn)
+            container.addView(masonryRow)
+        }
+
         lifecycleScope.launch {
-            for (i in jsonArray.length() - 1 downTo 0) {
+            var visibleCardIndex = 0
+            for (i in orderedIndices) {
                 val noteObj = jsonArray.getJSONObject(i)
                 val summary = noteObj.getString("summary")
+                val bodyText = noteObj.optString("body", "").trim()
+                val isPinned = noteObj.optBoolean("is_pinned", false)
+                val customColorHex = noteObj.optString("card_color", "")
                 val tags = noteObj.optString("tag", "Personal")
 
                 if (currentFilter != "All" && currentFilter != tags) continue
-                if (searchQuery.isNotEmpty() && !summary.lowercase().contains(searchQuery.lowercase())) continue
+                if (searchQuery.isNotEmpty()) {
+                    val q = searchQuery.lowercase()
+                    if (!summary.lowercase().contains(q) && !bodyText.lowercase().contains(q)) continue
+                }
 
-                val view = inflater.inflate(R.layout.note_item, container, false)
-                (view as? com.google.android.material.card.MaterialCardView)?.setCardBackgroundColor(cardBgColor)
+                val targetParent: ViewGroup = if (layoutStyle == LAYOUT_BENTO) {
+                    if (visibleCardIndex % 2 == 0) leftColumn!! else rightColumn!!
+                } else {
+                    container
+                }
 
+                val view = inflater.inflate(R.layout.note_item, targetParent, false)
+                val cardView = view as? com.google.android.material.card.MaterialCardView
+                cardView?.setCardBackgroundColor(ThemeManager.resolveNoteCardBackground(this@MainActivity, customColorHex))
+                if (isPinned) {
+                    cardView?.strokeWidth = (1.5f * density).toInt()
+                    cardView?.strokeColor = accentColor
+                } else if (customColorHex.isNotEmpty() || themeKey == ThemeManager.THEME_GLASS) {
+                    cardView?.strokeWidth = (1 * density).toInt()
+                    cardView?.strokeColor = ThemeManager.getCardStrokeColor(this@MainActivity, customColorHex)
+                } else {
+                    cardView?.strokeWidth = 0
+                }
+
+                val noteRootLinear = view.findViewById<LinearLayout>(R.id.noteRootLinear)
+                val noteContentRow = view.findViewById<LinearLayout>(R.id.noteContentRow)
+                val noteTextColumn = view.findViewById<LinearLayout>(R.id.noteTextColumn)
+                val imageContainer = view.findViewById<View>(R.id.imageContainer)
+                val imageView = view.findViewById<ImageView>(R.id.itemImage)
                 val itemTitle = view.findViewById<TextView>(R.id.itemTitle)
-                itemTitle.text = summary
+                val itemBody = view.findViewById<TextView>(R.id.itemBody)
+                val dateView = view.findViewById<TextView>(R.id.itemDate)
+                val tagView = view.findViewById<TextView>(R.id.itemTag)
+                val playBtn = view.findViewById<ImageButton>(R.id.itemPlay)
+                val itemMenu = view.findViewById<ImageButton>(R.id.itemMenu)
+
+                val allImages = extractImagePaths(noteObj)
+                val allAudios = extractAudioPaths(noteObj)
+                val firstImgPath = allImages.firstOrNull() ?: ""
+                val firstAudioPath = allAudios.firstOrNull() ?: ""
+
+                itemTitle.text = if (isPinned) "📌  $summary" else summary
                 itemTitle.typeface = font
                 itemTitle.setTextColor(titleColor)
 
-                val timestamp = noteObj.optLong("timestamp", 0L)
-                val dateView = view.findViewById<TextView>(R.id.itemDate)
-                dateView.typeface = font
-                dateView.setTextColor(dateColor)
-                if (timestamp > 0L) {
-                    dateView.text = sdf.format(java.util.Date(timestamp))
-                } else {
-                    dateView.text = "Just now"
+                if (itemBody != null) {
+                    if (bodyText.isNotEmpty() && layoutStyle != LAYOUT_LEDGER) {
+                        itemBody.visibility = View.VISIBLE
+                        itemBody.text = bodyText.replace("[ ] ", "☐  ").replace("[x] ", "☑  ")
+                        itemBody.setTextColor(dateColor)
+                    } else {
+                        itemBody.visibility = View.GONE
+                    }
                 }
 
-                val imgPath = noteObj.optString("image_path", "")
-                val imageView = view.findViewById<ImageView>(R.id.itemImage)
-                val imageContainer = view.findViewById<View>(R.id.imageContainer)
+                val timestamp = noteObj.optLong("timestamp", 0L)
+                dateView.typeface = font
+                dateView.setTextColor(dateColor)
+                val extraBadge = buildString {
+                    if (layoutStyle == LAYOUT_LEDGER) {
+                        if (allImages.isNotEmpty()) append(" • 📷 ${allImages.size}")
+                        if (allAudios.isNotEmpty()) append(" • 🎙️ ${allAudios.size}")
+                        if (bodyText.isNotEmpty()) append(" • 📝")
+                    } else {
+                        if (allImages.size > 1) append(" • 📷 ${allImages.size}")
+                        if (allAudios.size > 1) append(" • 🎙️ ${allAudios.size}")
+                    }
+                }
+                if (timestamp > 0L) {
+                    val shortSdf = if (layoutStyle == LAYOUT_BENTO) {
+                        java.text.SimpleDateFormat("MMM dd", java.util.Locale.getDefault())
+                    } else sdf
+                    dateView.text = shortSdf.format(java.util.Date(timestamp)) + extraBadge
+                } else {
+                    dateView.text = "Just now$extraBadge"
+                }
 
-                if (imgPath.isNotEmpty() && java.io.File(imgPath).exists()) {
+                val noteActionsRow = view.findViewById<LinearLayout>(R.id.noteActionsRow)
+
+                // Apply Layout-Specific Geometry (Dedicated Title/Date space + Bottom-Right actions)
+                when (layoutStyle) {
+                    LAYOUT_BENTO -> {
+                        val lp = cardView?.layoutParams as? ViewGroup.MarginLayoutParams
+                        lp?.setMargins(0, (6 * density).toInt(), 0, (6 * density).toInt())
+                        cardView?.radius = 20f * density
+                        imageView?.layoutParams?.height = (130 * density).toInt()
+                        val pad12 = (12 * density).toInt()
+                        val pad10 = (10 * density).toInt()
+                        noteContentRow?.setPadding(pad12, pad12, pad10, pad10)
+                        itemTitle.textSize = 15f
+                        itemTitle.maxLines = 2
+                        itemBody?.maxLines = 3
+                        itemBody?.textSize = 13f
+                        tagView.visibility = View.VISIBLE
+                        (noteActionsRow?.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin = (8 * density).toInt()
+
+                        // Bento Grid specific: move category tag to its own line above voice and options buttons
+                        noteActionsRow?.orientation = LinearLayout.VERTICAL
+                        noteActionsRow?.gravity = Gravity.END
+                        val tagLp = tagView.layoutParams as? ViewGroup.MarginLayoutParams
+                        tagLp?.marginEnd = 0
+                        tagLp?.bottomMargin = (6 * density).toInt()
+                        tagView.layoutParams = tagLp
+                    }
+                    LAYOUT_CAPSULE -> {
+                        cardView?.radius = 22f * density
+                        noteRootLinear?.orientation = LinearLayout.HORIZONTAL
+                        noteRootLinear?.gravity = Gravity.FILL_VERTICAL
+                        if (firstImgPath.isNotEmpty()) {
+                            val thumbWidth = (96 * density).toInt()
+                            imageContainer?.layoutParams = LinearLayout.LayoutParams(thumbWidth, ViewGroup.LayoutParams.MATCH_PARENT).apply {
+                                setMargins(0, 0, 0, 0)
+                            }
+                            imageContainer?.clipToOutline = true
+                            imageContainer?.background = GradientDrawable().apply {
+                                shape = GradientDrawable.RECTANGLE
+                                cornerRadii = floatArrayOf(
+                                    22f * density, 22f * density, // top-left
+                                    0f, 0f,                      // top-right
+                                    0f, 0f,                      // bottom-right
+                                    22f * density, 22f * density  // bottom-left
+                                )
+                            }
+                            imageView?.scaleType = ImageView.ScaleType.CENTER_CROP
+                            imageView?.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                        }
+                        noteContentRow?.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                        val pad14 = (14 * density).toInt()
+                        val pad10 = (10 * density).toInt()
+                        noteContentRow?.setPadding(pad14, (12 * density).toInt(), pad10, pad10)
+                        itemTitle.maxLines = 2
+                        itemBody?.maxLines = 2
+                        (noteActionsRow?.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin = (6 * density).toInt()
+
+                        noteActionsRow?.orientation = LinearLayout.HORIZONTAL
+                        noteActionsRow?.gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                        val tagLp = tagView.layoutParams as? ViewGroup.MarginLayoutParams
+                        tagLp?.marginEnd = (8 * density).toInt()
+                        tagLp?.bottomMargin = 0
+                        tagView.layoutParams = tagLp
+                    }
+                    LAYOUT_LEDGER -> {
+                        val lp = cardView?.layoutParams as? ViewGroup.MarginLayoutParams
+                        lp?.setMargins((20 * density).toInt(), (5 * density).toInt(), (20 * density).toInt(), (5 * density).toInt())
+                        cardView?.radius = 18f * density
+                        val padH = (16 * density).toInt()
+                        val padV = (12 * density).toInt()
+                        noteContentRow?.setPadding(padH, padV, (12 * density).toInt(), (10 * density).toInt())
+                        itemTitle.textSize = 16f
+                        itemTitle.maxLines = 1
+                        imageContainer?.visibility = View.GONE
+                        (noteActionsRow?.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin = (6 * density).toInt()
+
+                        noteActionsRow?.orientation = LinearLayout.HORIZONTAL
+                        noteActionsRow?.gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                        val tagLp = tagView.layoutParams as? ViewGroup.MarginLayoutParams
+                        tagLp?.marginEnd = (8 * density).toInt()
+                        tagLp?.bottomMargin = 0
+                        tagView.layoutParams = tagLp
+                    }
+                    else -> { // LAYOUT_CLASSIC
+                        cardView?.radius = 24f * density
+                        imageView?.layoutParams?.height = (220 * density).toInt()
+
+                        noteActionsRow?.orientation = LinearLayout.HORIZONTAL
+                        noteActionsRow?.gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                        val tagLp = tagView.layoutParams as? ViewGroup.MarginLayoutParams
+                        tagLp?.marginEnd = (8 * density).toInt()
+                        tagLp?.bottomMargin = 0
+                        tagView.layoutParams = tagLp
+                    }
+                }
+
+                // Load Image Thumbnail (for Classic, Bento, and Capsule)
+                if (firstImgPath.isNotEmpty() && layoutStyle != LAYOUT_LEDGER) {
                     imageContainer?.visibility = View.VISIBLE
-                    val cachedBitmap = thumbnailCache.get(imgPath)
+                    val cachedBitmap = thumbnailCache.get(firstImgPath)
                     if (cachedBitmap != null && !cachedBitmap.isRecycled) {
                         imageView.setImageBitmap(cachedBitmap)
                     } else {
                         launch(Dispatchers.IO) {
                             val options = BitmapFactory.Options().apply {
                                 inJustDecodeBounds = true
-                                BitmapFactory.decodeFile(imgPath, this)
+                                BitmapFactory.decodeFile(firstImgPath, this)
                                 inSampleSize = calculateInSampleSize(this, 400, 300)
                                 inJustDecodeBounds = false
                             }
-                            val bitmap = BitmapFactory.decodeFile(imgPath, options)
+                            val bitmap = BitmapFactory.decodeFile(firstImgPath, options)
                             if (bitmap != null) {
-                                thumbnailCache.put(imgPath, bitmap)
+                                thumbnailCache.put(firstImgPath, bitmap)
                                 withContext(Dispatchers.Main) {
                                     imageView.setImageBitmap(bitmap)
                                 }
@@ -1249,20 +1851,16 @@ class MainActivity : AppCompatActivity() {
                     imageContainer?.visibility = View.GONE
                 }
 
-                val audioPath = noteObj.optString("audio_path", "")
-                val playBtn = view.findViewById<ImageButton>(R.id.itemPlay)
                 playBtn.setColorFilter(accentColor)
-
-                if (audioPath.isNotEmpty() && java.io.File(audioPath).exists()) {
+                if (firstAudioPath.isNotEmpty()) {
                     playBtn.visibility = View.VISIBLE
                     playBtn.setOnClickListener {
-                        playAudioNote(audioPath)
+                        playAudioNote(firstAudioPath)
                     }
                 } else {
                     playBtn.visibility = View.GONE
                 }
 
-                val tagView = view.findViewById<TextView>(R.id.itemTag)
                 tagView.text = tags
                 tagView.typeface = font
                 ThemeManager.applyCategoryBadgeStyle(this@MainActivity, tagView)
@@ -1272,7 +1870,6 @@ class MainActivity : AppCompatActivity() {
                     showCategoryFlyout(tagView, noteObj, i, jsonArray, tagList)
                 }
 
-                val itemMenu = view.findViewById<ImageButton>(R.id.itemMenu)
                 itemMenu?.setColorFilter(titleColor)
                 itemMenu?.addApplePressEffect()
                 itemMenu?.setOnClickListener {
@@ -1280,7 +1877,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 view.setOnClickListener {
-                    showFullScreenNote(summary, tags, imgPath, audioPath, i, jsonArray)
+                    openFullNoteEditor(editIndex = i)
                 }
 
                 view.addApplePressEffect()
@@ -1291,20 +1888,19 @@ class MainActivity : AppCompatActivity() {
                     view.scaleY = 0.95f
                     view.alpha = 0f
 
-                    val delayIndex = jsonArray.length() - 1 - i
-
                     view.animate()
                         .translationY(0f)
                         .scaleX(1f)
                         .scaleY(1f)
                         .alpha(1f)
-                        .setStartDelay((delayIndex * 45).toLong())
+                        .setStartDelay((visibleCardIndex * 40).toLong())
                         .setDuration(450)
                         .setInterpolator(appleOvershoot)
                         .start()
                 }
 
-                container.addView(view)
+                targetParent.addView(view)
+                visibleCardIndex++
             }
         }
     }
@@ -1322,7 +1918,7 @@ class MainActivity : AppCompatActivity() {
         return inSampleSize
     }
 
-    private fun showCategoryFlyout(anchorView: View, noteObj: JSONObject, index: Int, jsonArray: JSONArray, tagList: Array<String>) {
+    private fun showCategoryFlyout(anchorView: View, noteObj: JSONObject?, index: Int, jsonArray: JSONArray?, tagList: Array<String>, onTagChosen: ((String) -> Unit)? = null) {
         val listView = ListView(this)
 
         ThemeManager.applyPopupSurfaceStyle(this, listView)
@@ -1358,15 +1954,19 @@ class MainActivity : AppCompatActivity() {
 
         listView.setOnItemClickListener { _, _, position, _ ->
             val selectedTag = tagList[position]
-            (anchorView as TextView).text = selectedTag
+            (anchorView as? TextView)?.text = selectedTag
 
-            try {
-                noteObj.put("tag", selectedTag)
-                prefs.edit().putString("notes_array", jsonArray.toString()).apply()
-                loadDataToMemory()
-                refreshUI(animateEntrance = false)
-            } catch (e: Exception) {
-                e.printStackTrace()
+            if (onTagChosen != null) {
+                onTagChosen(selectedTag)
+            } else if (noteObj != null && jsonArray != null) {
+                try {
+                    noteObj.put("tag", selectedTag)
+                    prefs.edit().putString("notes_array", jsonArray.toString()).apply()
+                    loadDataToMemory()
+                    refreshUI(animateEntrance = false)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
 
             popupWindow.dismiss()
@@ -1416,25 +2016,49 @@ class MainActivity : AppCompatActivity() {
         val item2 = popupView.findViewById<TextView>(R.id.menuItem2)
         val item3 = popupView.findViewById<TextView>(R.id.menuItem3)
 
-        item1.text = "Rename"
+        val isPinned = noteObj.optBoolean("is_pinned", false)
+
+        item1.text = if (isPinned) "Unpin Note" else "Pin to Top"
         item1.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_edit, 0, 0, 0)
         item1.compoundDrawablePadding = (12 * resources.displayMetrics.density).toInt()
 
-        item2.text = "Delete"
-        item2.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_delete, 0, 0, 0)
+        item2.text = "Share / Copy"
+        item2.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_help, 0, 0, 0)
         item2.compoundDrawablePadding = (12 * resources.displayMetrics.density).toInt()
 
-        item3.visibility = View.GONE
+        item3.visibility = View.VISIBLE
+        item3.text = "Delete"
+        item3.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_delete, 0, 0, 0)
+        item3.compoundDrawablePadding = (12 * resources.displayMetrics.density).toInt()
 
-        // Apply surface and text/drawable colors AFTER setting drawables so icons get tinted properly!
         ThemeManager.applyPopupSurfaceStyle(this, popupView)
 
         item1.setOnClickListener {
             popupWindow.dismiss()
-            showRenameNoteDialog(noteObj, index, jsonArray)
+            noteObj.put("is_pinned", !isPinned)
+            jsonArray.put(index, noteObj)
+            prefs.edit().putString("notes_array", jsonArray.toString()).apply()
+            loadDataToMemory()
+            refreshUI(animateEntrance = false)
+            Toast.makeText(this, if (!isPinned) "Pinned to top" else "Unpinned", Toast.LENGTH_SHORT).show()
         }
 
         item2.setOnClickListener {
+            popupWindow.dismiss()
+            val title = noteObj.optString("summary", "")
+            val body = noteObj.optString("body", "").replace("[ ] ", "☐ ").replace("[x] ", "☑ ")
+            val fullText = if (body.isNotEmpty()) "$title\n\n$body" else title
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("MemoryVoid Note", fullText))
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                putExtra(Intent.EXTRA_TEXT, fullText)
+            }
+            startActivity(Intent.createChooser(shareIntent, "Share Note"))
+        }
+
+        item3.setOnClickListener {
             popupWindow.dismiss()
             showDeleteNoteDialog(index, jsonArray)
         }
@@ -1465,119 +2089,661 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCreateNoteDialog() {
-        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
-        dialog.setContentView(R.layout.dialog_glass_input)
-        applyDialogSurface(dialog)
+        openFullNoteEditor(editIndex = -1)
+    }
+
+    private fun openFullNoteEditor(editIndex: Int = -1) {
+        val themeKey = ThemeManager.getCurrentThemeKey(this)
+        val themeRes = ThemeManager.getThemeDialogRes(this)
+        val dialog = ComponentDialog(this, themeRes)
+        dialog.setContentView(R.layout.dialog_note_editor)
+
+        val existingNote = if (editIndex in 0 until masterNotesArray.length()) {
+            masterNotesArray.optJSONObject(editIndex)
+        } else null
+
+        var currentTag = existingNote?.optString("tag", if (currentFilter != "All") currentFilter else "Personal")
+            ?: (if (currentFilter != "All") currentFilter else "Personal")
+        val imagePathsList = extractImagePaths(existingNote)
+        val audioPathsList = extractAudioPaths(existingNote)
+        var isChecklistMode = existingNote?.optBoolean("is_checklist", false) ?: false
+        val isPinned = existingNote?.optBoolean("is_pinned", false) ?: false
+        var currentCardColorHex = existingNote?.optString("card_color", "") ?: ""
+
+        var editorRecorder: android.media.MediaRecorder? = null
+        var activeRecordingTempPath: String? = null
+        var isEditorRecording = false
+        var isExplicitlyDeleted = false
+        var hasSaved = false
 
         dialog.window?.let { window ->
-            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            window.setGravity(Gravity.BOTTOM)
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
-            val params = window.attributes
-            params?.y = (72 * resources.displayMetrics.density).toInt()
-            window.attributes = params
+            window.setWindowAnimations(R.style.IosModalAnimation)
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            if (themeKey == ThemeManager.THEME_GLASS) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+                window.setBackgroundDrawable(ColorDrawable(Color.parseColor("#B3000000")))
+            }
         }
 
-        dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "Create Note"
+        val root = dialog.findViewById<View>(R.id.editorRoot)
+        val topBar = dialog.findViewById<View>(R.id.editorTopBar)
+        val bottomDock = dialog.findViewById<View>(R.id.editorBottomDock)
+        val bottomCard = dialog.findViewById<com.google.android.material.card.MaterialCardView>(R.id.editorBottomCard)
 
-        val input = dialog.findViewById<EditText>(R.id.dialogInput)
-        input?.hint = "Write your note here..."
-        input?.setText("")
+        val btnBack = dialog.findViewById<ImageButton>(R.id.btnEditorBack)
+        val tagBadge = dialog.findViewById<TextView>(R.id.editorTagBadge)
+        val btnDelete = dialog.findViewById<ImageButton>(R.id.btnEditorDelete)
 
-        val btnNegative = dialog.findViewById<TextView>(R.id.btnNegative)
-        val btnPositive = dialog.findViewById<TextView>(R.id.btnPositive)
+        val imagesScroll = dialog.findViewById<HorizontalScrollView>(R.id.editorImagesScroll)
+        val imagesContainer = dialog.findViewById<LinearLayout>(R.id.editorImagesContainer)
+        val audiosContainer = dialog.findViewById<LinearLayout>(R.id.editorAudiosContainer)
 
-        btnNegative?.addApplePressEffect()
-        btnPositive?.addApplePressEffect()
+        val titleInput = dialog.findViewById<EditText>(R.id.editorTitleInput)
+        val timestampText = dialog.findViewById<TextView>(R.id.editorTimestampText)
+        val bodyInput = dialog.findViewById<EditText>(R.id.editorBodyInput)
 
-        btnNegative?.text = "CANCEL"
-        btnNegative?.setOnClickListener { dialog.dismiss() }
+        val checklistContainer = dialog.findViewById<LinearLayout>(R.id.editorChecklistContainer)
+        val checklistItemsList = dialog.findViewById<LinearLayout>(R.id.checklistItemsList)
+        val btnAddChecklistItem = dialog.findViewById<TextView>(R.id.btnAddChecklistItem)
 
-        btnPositive?.text = "SAVE"
-        btnPositive?.setOnClickListener {
-            val noteText = input?.text?.toString()?.trim() ?: ""
-            if (noteText.isNotEmpty()) {
-                saveNewNote(summary = noteText, tag = if (currentFilter != "All") currentFilter else "Personal")
+        val colorPaletteScroll = dialog.findViewById<HorizontalScrollView>(R.id.editorColorPaletteScroll)
+        val colorPaletteContainer = dialog.findViewById<LinearLayout>(R.id.editorColorPaletteContainer)
+
+        val btnAddImage = dialog.findViewById<ImageButton>(R.id.btnEditorAddImage)
+        val btnRecordAudio = dialog.findViewById<ImageButton>(R.id.btnEditorRecordAudio)
+        val btnToggleChecklist = dialog.findViewById<ImageButton>(R.id.btnEditorToggleChecklist)
+        val btnPalette = dialog.findViewById<ImageButton>(R.id.btnEditorPalette)
+        val btnSave = dialog.findViewById<TextView>(R.id.btnEditorSave)
+
+        val density = resources.displayMetrics.density
+        val accentColor = getAccentColor()
+        val primaryColor = ThemeManager.getPrimaryColor(this)
+        val secondaryColor = if (themeKey == ThemeManager.THEME_LIGHT) Color.parseColor("#5C6270") else Color.parseColor("#98A2B3")
+        val surfaceVariantColor = when (themeKey) {
+            ThemeManager.THEME_LIGHT -> Color.parseColor("#E8ECF2")
+            ThemeManager.THEME_GLASS -> Color.parseColor("#CC161920")
+            else -> Color.parseColor("#161616")
+        }
+
+        fun applyEditorBackgroundColor() {
+            val resolvedBg = if (currentCardColorHex.isNotEmpty()) {
+                ThemeManager.resolveNoteCardBackground(this, currentCardColorHex)
+            } else {
+                when (themeKey) {
+                    ThemeManager.THEME_LIGHT -> Color.parseColor("#F2F4F7")
+                    ThemeManager.THEME_GLASS -> Color.TRANSPARENT
+                    else -> Color.BLACK
+                }
             }
+            root?.setBackgroundColor(resolvedBg)
+        }
+        applyEditorBackgroundColor()
+
+        bottomCard?.setCardBackgroundColor(surfaceVariantColor)
+        bottomCard?.strokeColor = accentColor
+        bottomCard?.strokeWidth = (1 * density).toInt()
+
+        btnBack?.setColorFilter(primaryColor)
+        btnDelete?.setColorFilter(primaryColor)
+        btnDelete?.visibility = if (existingNote != null) View.VISIBLE else View.GONE
+
+        titleInput?.setTextColor(primaryColor)
+        titleInput?.setHintTextColor(secondaryColor)
+        bodyInput?.setTextColor(primaryColor)
+        bodyInput?.setHintTextColor(secondaryColor)
+        timestampText?.setTextColor(secondaryColor)
+        btnAddChecklistItem?.setTextColor(accentColor)
+
+        btnAddImage?.setColorFilter(primaryColor)
+        btnRecordAudio?.setColorFilter(primaryColor)
+        btnToggleChecklist?.setColorFilter(if (isChecklistMode) accentColor else primaryColor)
+        btnPalette?.setColorFilter(if (currentCardColorHex.isNotEmpty()) accentColor else primaryColor)
+
+        btnSave?.backgroundTintList = android.content.res.ColorStateList.valueOf(accentColor)
+        btnSave?.setTextColor(ThemeManager.getContrastingTextColor(accentColor))
+
+        // Build Google Keep-style Note Color Palette Strip
+        if (colorPaletteContainer != null) {
+            ThemeManager.applyPopupSurfaceStyle(this, colorPaletteContainer)
+            val paletteHexes = listOf(
+                "",          // Default Theme Surface
+                "#692B2B",   // Bright Coral Red
+                "#6E421C",   // Bright Tangerine Orange
+                "#6B5B1B",   // Bright Golden Yellow
+                "#235D3A",   // Bright Emerald Green
+                "#1B575E",   // Bright Cyan Teal
+                "#1E436E",   // Bright Cobalt Blue
+                "#47286E",   // Bright Electric Purple
+                "#69244C"    // Bright Magenta Pink
+            )
+            paletteHexes.forEach { hex ->
+                val size = (34 * density).toInt()
+                val swatch = FrameLayout(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                        marginEnd = (10 * density).toInt()
+                    }
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        val fill = if (hex.isEmpty()) surfaceVariantColor else Color.parseColor(hex)
+                        setColor(fill)
+                        val isSelected = hex == currentCardColorHex
+                        setStroke(
+                            ((if (isSelected) 2.5f else 1f) * density).toInt(),
+                            if (isSelected) accentColor else secondaryColor
+                        )
+                    }
+                    addApplePressEffect()
+                    setOnClickListener {
+                        currentCardColorHex = hex
+                        applyEditorBackgroundColor()
+                        btnPalette?.setColorFilter(if (currentCardColorHex.isNotEmpty()) accentColor else primaryColor)
+                        colorPaletteScroll?.visibility = View.GONE
+                    }
+                }
+                colorPaletteContainer.addView(swatch)
+            }
+        }
+
+        btnPalette?.addApplePressEffect()
+        btnPalette?.setOnClickListener {
+            colorPaletteScroll?.visibility = if (colorPaletteScroll?.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+
+        // Handle System Bars & Keyboard Insets smoothly
+        if (root != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+                val sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+                val bottomInset = Math.max(sysBars.bottom, ime.bottom)
+
+                topBar?.let { bar ->
+                    val lp = bar.layoutParams as ViewGroup.MarginLayoutParams
+                    lp.topMargin = sysBars.top + (6 * density).toInt()
+                    bar.layoutParams = lp
+                }
+                bottomDock?.setPadding(
+                    (16 * density).toInt(),
+                    (6 * density).toInt(),
+                    (16 * density).toInt(),
+                    bottomInset + (12 * density).toInt()
+                )
+                WindowInsetsCompat.CONSUMED
+            }
+        }
+
+        // Category Badge Selector using custom themed flyout
+        if (tagBadge != null) {
+            tagBadge.text = currentTag
+            ThemeManager.applyCategoryBadgeStyle(this, tagBadge)
+            tagBadge.addApplePressEffect()
+            tagBadge.setOnClickListener {
+                val savedTags = prefs.getStringSet("custom_tags", setOf("All", "Work", "Personal")) ?: setOf("All", "Work", "Personal")
+                val tagList = savedTags.filter { it != "All" }.toTypedArray()
+                showCategoryFlyout(
+                    anchorView = tagBadge,
+                    noteObj = null,
+                    index = editIndex,
+                    jsonArray = null,
+                    tagList = tagList
+                ) { chosenTag ->
+                    currentTag = chosenTag
+                }
+            }
+        }
+
+        val sdf = java.text.SimpleDateFormat("MMM dd, yyyy • hh:mm a", java.util.Locale.getDefault())
+        val noteTime = existingNote?.optLong("timestamp", System.currentTimeMillis()) ?: System.currentTimeMillis()
+        timestampText?.text = "Edited ${sdf.format(java.util.Date(noteTime))}"
+
+        titleInput?.setText(existingNote?.optString("summary", "") ?: "")
+        val initialBody = existingNote?.optString("body", "") ?: ""
+
+        // Checklist Row Builder with Enter-Key Auto-Add
+        fun addChecklistRow(text: String = "", isChecked: Boolean = false, requestFocusNow: Boolean = false) {
+            if (checklistItemsList == null) return
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, (4 * density).toInt(), 0, (4 * density).toInt())
+            }
+
+            val checkBox = CheckBox(this).apply {
+                this.isChecked = isChecked
+                buttonTintList = android.content.res.ColorStateList.valueOf(accentColor)
+            }
+
+            val itemInput = EditText(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                background = null
+                setText(text)
+                hint = "List item"
+                textSize = 16f
+                isSingleLine = true
+                imeOptions = EditorInfo.IME_ACTION_NEXT
+                setTextColor(if (isChecked) secondaryColor else primaryColor)
+                setHintTextColor(secondaryColor)
+                paintFlags = if (isChecked) paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG else paintFlags and android.graphics.Paint.STRIKE_THRU_TEXT_FLAG.inv()
+            }
+
+            itemInput.setOnEditorActionListener { _, actionId, event ->
+                val isEnter = event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
+                if (actionId == EditorInfo.IME_ACTION_NEXT || actionId == EditorInfo.IME_ACTION_DONE || isEnter) {
+                    addChecklistRow("", false, requestFocusNow = true)
+                    true
+                } else {
+                    false
+                }
+            }
+
+            checkBox.setOnCheckedChangeListener { _, checked ->
+                itemInput.setTextColor(if (checked) secondaryColor else primaryColor)
+                itemInput.paintFlags = if (checked) {
+                    itemInput.paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG
+                } else {
+                    itemInput.paintFlags and android.graphics.Paint.STRIKE_THRU_TEXT_FLAG.inv()
+                }
+            }
+
+            val btnDeleteRow = ImageButton(this).apply {
+                layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
+                setBackgroundResource(android.R.color.transparent)
+                setImageResource(R.drawable.ic_clear_circle)
+                setColorFilter(secondaryColor)
+                setOnClickListener {
+                    checklistItemsList.removeView(row)
+                }
+            }
+
+            row.addView(checkBox)
+            row.addView(itemInput)
+            row.addView(btnDeleteRow)
+            checklistItemsList.addView(row)
+
+            if (requestFocusNow) {
+                itemInput.post {
+                    itemInput.requestFocus()
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.showSoftInput(itemInput, InputMethodManager.SHOW_IMPLICIT)
+                }
+            }
+        }
+
+        fun serializeChecklistToString(): String {
+            if (checklistItemsList == null) return ""
+            val lines = mutableListOf<String>()
+            for (i in 0 until checklistItemsList.childCount) {
+                val row = checklistItemsList.getChildAt(i) as? LinearLayout ?: continue
+                val cb = row.getChildAt(0) as? CheckBox ?: continue
+                val et = row.getChildAt(1) as? EditText ?: continue
+                val text = et.text.toString().trim()
+                if (text.isNotEmpty()) {
+                    lines.add(if (cb.isChecked) "[x] $text" else "[ ] $text")
+                }
+            }
+            return lines.joinToString("\n")
+        }
+
+        fun populateChecklistFromString(raw: String) {
+            checklistItemsList?.removeAllViews()
+            val lines = raw.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+            if (lines.isEmpty()) {
+                addChecklistRow("", false, requestFocusNow = true)
+            } else {
+                lines.forEach { line ->
+                    when {
+                        line.startsWith("[x] ") -> addChecklistRow(line.removePrefix("[x] "), true)
+                        line.startsWith("[ ] ") -> addChecklistRow(line.removePrefix("[ ] "), false)
+                        else -> addChecklistRow(line, false)
+                    }
+                }
+            }
+        }
+
+        if (isChecklistMode) {
+            bodyInput?.visibility = View.GONE
+            checklistContainer?.visibility = View.VISIBLE
+            populateChecklistFromString(initialBody)
+        } else {
+            bodyInput?.visibility = View.VISIBLE
+            checklistContainer?.visibility = View.GONE
+            bodyInput?.setText(initialBody)
+        }
+
+        btnAddChecklistItem?.setOnClickListener {
+            addChecklistRow("", false, requestFocusNow = true)
+        }
+
+        btnToggleChecklist?.addApplePressEffect()
+        btnToggleChecklist?.setOnClickListener {
+            isChecklistMode = !isChecklistMode
+            btnToggleChecklist.setColorFilter(if (isChecklistMode) accentColor else primaryColor)
+            if (isChecklistMode) {
+                val currentText = bodyInput?.text?.toString() ?: ""
+                bodyInput?.visibility = View.GONE
+                checklistContainer?.visibility = View.VISIBLE
+                populateChecklistFromString(currentText)
+            } else {
+                val serialized = serializeChecklistToString()
+                    .replace("[ ] ", "")
+                    .replace("[x] ", "")
+                checklistContainer?.visibility = View.GONE
+                bodyInput?.visibility = View.VISIBLE
+                bodyInput?.setText(serialized)
+            }
+        }
+
+        // MULTI-IMAGE GALLERY UI HELPER (Never overwrites existing screenshots!)
+        fun refreshImagesGalleryUI() {
+            if (imagesContainer == null || imagesScroll == null) return
+            imagesContainer.removeAllViews()
+
+            val validImages = imagePathsList.filter { it.isNotEmpty() && java.io.File(it).exists() }
+            if (validImages.isEmpty()) {
+                imagesScroll.visibility = View.GONE
+                return
+            }
+
+            imagesScroll.visibility = View.VISIBLE
+            val cardWidth = if (validImages.size == 1) {
+                resources.displayMetrics.widthPixels - (40 * density).toInt()
+            } else {
+                (220 * density).toInt()
+            }
+            val cardHeight = (220 * density).toInt()
+
+            validImages.forEach { imgPath ->
+                val card = com.google.android.material.card.MaterialCardView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(cardWidth, cardHeight).apply {
+                        marginEnd = (12 * density).toInt()
+                    }
+                    radius = 20f * density
+                    cardElevation = 0f
+                    setCardBackgroundColor(surfaceVariantColor)
+                }
+
+                val rel = RelativeLayout(this).apply {
+                    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                }
+
+                val imgView = ImageView(this).apply {
+                    layoutParams = RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    val bmp = BitmapFactory.decodeFile(imgPath)
+                    setImageBitmap(bmp)
+                    setOnClickListener { showZoomableImage(imgPath) }
+                }
+
+                val btnRemove = ImageButton(this).apply {
+                    val btnSize = (32 * density).toInt()
+                    layoutParams = RelativeLayout.LayoutParams(btnSize, btnSize).apply {
+                        addRule(RelativeLayout.ALIGN_PARENT_TOP)
+                        addRule(RelativeLayout.ALIGN_PARENT_END)
+                        val m = (10 * density).toInt()
+                        setMargins(m, m, m, m)
+                    }
+                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_glass_circle)
+                    setImageResource(R.drawable.ic_clear_circle)
+                    setColorFilter(Color.WHITE)
+                    setOnClickListener {
+                        imagePathsList.remove(imgPath)
+                        refreshImagesGalleryUI()
+                    }
+                }
+
+                rel.addView(imgView)
+                rel.addView(btnRemove)
+                card.addView(rel)
+                imagesContainer.addView(card)
+            }
+        }
+        refreshImagesGalleryUI()
+
+        btnAddImage?.addApplePressEffect()
+        btnAddImage?.setOnClickListener {
+            pendingImagePickedCallback = { savedPath ->
+                // Appends new image to the list without removing existing screenshot!
+                imagePathsList.add(savedPath)
+                refreshImagesGalleryUI()
+            }
+            pickImageLauncher.launch("image/*")
+        }
+
+        // MULTI-AUDIO RECORDINGS STACK UI HELPER (Never overwrites existing voice memos!)
+        fun refreshAudiosListUI() {
+            if (audiosContainer == null) return
+            audiosContainer.removeAllViews()
+
+            val validAudios = audioPathsList.filter { it.isNotEmpty() && java.io.File(it).exists() }
+            if (validAudios.isEmpty()) {
+                audiosContainer.visibility = View.GONE
+                return
+            }
+
+            audiosContainer.visibility = View.VISIBLE
+            validAudios.forEachIndexed { idx, audioPath ->
+                val pillCard = com.google.android.material.card.MaterialCardView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        (50 * density).toInt()
+                    ).apply {
+                        bottomMargin = (8 * density).toInt()
+                    }
+                    radius = 16f * density
+                    cardElevation = 0f
+                    setCardBackgroundColor(surfaceVariantColor)
+                }
+
+                val row = LinearLayout(this).apply {
+                    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    val padH = (14 * density).toInt()
+                    setPadding(padH, 0, padH, 0)
+                }
+
+                val btnPlay = ImageButton(this).apply {
+                    val s = (34 * density).toInt()
+                    layoutParams = LinearLayout.LayoutParams(s, s)
+                    setBackgroundResource(android.R.color.transparent)
+                    setImageResource(R.drawable.ic_voice_note)
+                    setColorFilter(accentColor)
+                    setOnClickListener { playAudioNote(audioPath) }
+                }
+
+                val tvLabel = TextView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginStart = (10 * density).toInt()
+                    }
+                    text = "Voice Memo ${idx + 1} • Tap to play"
+                    textSize = 13f
+                    typeface = getAppTypeface()
+                    setTextColor(primaryColor)
+                    setOnClickListener { playAudioNote(audioPath) }
+                }
+
+                val btnDelAudio = ImageButton(this).apply {
+                    val s = (30 * density).toInt()
+                    layoutParams = LinearLayout.LayoutParams(s, s)
+                    setBackgroundResource(android.R.color.transparent)
+                    setImageResource(R.drawable.ic_clear_circle)
+                    setColorFilter(secondaryColor)
+                    setOnClickListener {
+                        audioPathsList.remove(audioPath)
+                        refreshAudiosListUI()
+                    }
+                }
+
+                row.addView(btnPlay)
+                row.addView(tvLabel)
+                row.addView(btnDelAudio)
+                pillCard.addView(row)
+                audiosContainer.addView(pillCard)
+            }
+        }
+        refreshAudiosListUI()
+
+        fun stopEditorRecordingIfNeeded() {
+            if (!isEditorRecording) return
+            isEditorRecording = false
+            try {
+                editorRecorder?.stop()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                try {
+                    editorRecorder?.release()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                editorRecorder = null
+            }
+            activeRecordingTempPath?.let { path ->
+                if (java.io.File(path).exists() && java.io.File(path).length() > 0L) {
+                    audioPathsList.add(path)
+                }
+            }
+            activeRecordingTempPath = null
+            btnRecordAudio?.setImageResource(R.drawable.ic_mic)
+            btnRecordAudio?.setColorFilter(primaryColor)
+            refreshAudiosListUI()
+        }
+
+        btnRecordAudio?.addApplePressEffect()
+        btnRecordAudio?.setOnClickListener {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.RECORD_AUDIO), 101)
+                return@setOnClickListener
+            }
+
+            if (!isEditorRecording) {
+                val outFile = java.io.File(filesDir, "audio_${System.currentTimeMillis()}.mp4")
+                activeRecordingTempPath = outFile.absolutePath
+                try {
+                    editorRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        android.media.MediaRecorder(this)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        android.media.MediaRecorder()
+                    }).apply {
+                        setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+                        setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+                        setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+                        setOutputFile(activeRecordingTempPath)
+                        prepare()
+                        start()
+                    }
+                    isEditorRecording = true
+                    // Swap to ic_stop_record icon while recording!
+                    btnRecordAudio.setImageResource(R.drawable.ic_stop_record)
+                    btnRecordAudio.clearColorFilter()
+                    Toast.makeText(this, "Recording voice memo...", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    activeRecordingTempPath = null
+                    Toast.makeText(this, "Could not start recording", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                stopEditorRecordingIfNeeded()
+                Toast.makeText(this, "Voice memo added", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Save Helper Function (Auto-saves all images & voice memos on Back or Save)
+        fun saveAndClose() {
+            if (hasSaved || isExplicitlyDeleted) return
+            hasSaved = true
+            stopEditorRecordingIfNeeded()
+
+            val finalTitle = titleInput?.text?.toString()?.trim() ?: ""
+            val finalBody = if (isChecklistMode) {
+                serializeChecklistToString()
+            } else {
+                bodyInput?.text?.toString()?.trim() ?: ""
+            }
+
+            val hasMedia = imagePathsList.isNotEmpty() || audioPathsList.isNotEmpty()
+            if (finalTitle.isEmpty() && finalBody.isEmpty() && !hasMedia) {
+                dialog.dismiss()
+                return
+            }
+
+            val resolvedTitle = when {
+                finalTitle.isNotEmpty() -> finalTitle
+                finalBody.isNotEmpty() -> finalBody.lineSequence().first().replace("[ ] ", "").replace("[x] ", "").take(40)
+                else -> "Memory - ${sdf.format(java.util.Date(System.currentTimeMillis()))}"
+            }
+
+            val imgJsonArray = JSONArray().apply { imagePathsList.forEach { put(it) } }
+            val audJsonArray = JSONArray().apply { audioPathsList.forEach { put(it) } }
+
+            loadDataToMemory()
+            val noteObj = JSONObject().apply {
+                put("summary", resolvedTitle)
+                put("body", finalBody)
+                put("is_checklist", isChecklistMode)
+                put("is_pinned", isPinned)
+                put("card_color", currentCardColorHex)
+                put("tag", currentTag)
+                // Save full arrays AND keep first item in legacy fields for 100% compatibility
+                put("image_paths", imgJsonArray)
+                put("audio_paths", audJsonArray)
+                put("image_path", imagePathsList.firstOrNull() ?: "")
+                put("audio_path", audioPathsList.firstOrNull() ?: "")
+                put("timestamp", System.currentTimeMillis())
+            }
+
+            if (editIndex in 0 until masterNotesArray.length()) {
+                masterNotesArray.put(editIndex, noteObj)
+            } else {
+                masterNotesArray.put(noteObj)
+            }
+
+            prefs.edit().putString("notes_array", masterNotesArray.toString()).apply()
+            refreshUI(animateEntrance = editIndex == -1)
             dialog.dismiss()
         }
 
-        dialog.show()
-        input?.post {
-            input.requestFocus()
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
-        }
-    }
+        btnBack?.addApplePressEffect()
+        btnBack?.setOnClickListener { saveAndClose() }
 
-    private fun saveNewNote(summary: String, tag: String = "Personal", imagePath: String = "", audioPath: String = "") {
-        loadDataToMemory()
-        val timestamp = System.currentTimeMillis()
-        val newNote = JSONObject().apply {
-            put("summary", summary)
-            put("tag", tag)
-            put("image_path", imagePath)
-            put("audio_path", audioPath)
-            put("timestamp", timestamp)
-        }
-        masterNotesArray.put(newNote)
-        prefs.edit().putString("notes_array", masterNotesArray.toString()).apply()
-        refreshUI()
-        Toast.makeText(this, "Note Saved", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun showRenameNoteDialog(noteObj: JSONObject, index: Int, jsonArray: JSONArray) {
-        val dialog = ComponentDialog(this, ThemeManager.getDialogThemeRes(this))
-        dialog.setContentView(R.layout.dialog_glass_input)
-        applyDialogSurface(dialog)
-
-        dialog.window?.let { window ->
-            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            window.setGravity(Gravity.BOTTOM)
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
-            val params = window.attributes
-            params?.y = (72 * resources.displayMetrics.density).toInt()
-            window.attributes = params
+        btnSave?.addApplePressEffect()
+        btnSave?.setOnClickListener {
+            saveAndClose()
+            Toast.makeText(this, "Note Saved", Toast.LENGTH_SHORT).show()
         }
 
-        dialog.findViewById<TextView>(R.id.dialogTitle)?.text = "Rename Note"
-
-        val input = dialog.findViewById<EditText>(R.id.dialogInput)
-        val currentName = noteObj.optString("summary", "")
-        input?.setText(currentName)
-        input?.setSelection(currentName.length)
-
-        val btnNegative = dialog.findViewById<TextView>(R.id.btnNegative)
-        val btnPositive = dialog.findViewById<TextView>(R.id.btnPositive)
-
-        btnNegative?.addApplePressEffect()
-        btnPositive?.addApplePressEffect()
-
-        btnNegative?.text = "CANCEL"
-        btnNegative?.setOnClickListener { dialog.dismiss() }
-
-        btnPositive?.text = "SAVE"
-        btnPositive?.setOnClickListener {
-            val newTitle = input?.text?.toString()?.trim() ?: ""
-            if (newTitle.isNotEmpty()) {
-                noteObj.put("summary", newTitle)
-                jsonArray.put(index, noteObj)
-                prefs.edit().putString("notes_array", jsonArray.toString()).apply()
-                loadDataToMemory()
-                refreshUI(animateEntrance = false)
-            }
+        btnDelete?.addApplePressEffect()
+        btnDelete?.setOnClickListener {
+            isExplicitlyDeleted = true
+            stopEditorRecordingIfNeeded()
             dialog.dismiss()
+            if (editIndex in 0 until masterNotesArray.length()) {
+                showDeleteNoteDialog(editIndex, masterNotesArray)
+            }
+        }
+
+        dialog.onBackPressedDispatcher.addCallback(dialog, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                saveAndClose()
+            }
+        })
+
+        dialog.setOnDismissListener {
+            if (!hasSaved && !isExplicitlyDeleted) {
+                saveAndClose()
+            }
         }
 
         dialog.show()
-        input?.post {
-            input.requestFocus()
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+
+        if (editIndex == -1) {
+            bodyInput?.post {
+                bodyInput.requestFocus()
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(bodyInput, InputMethodManager.SHOW_IMPLICIT)
+            }
         }
     }
 
@@ -1610,212 +2776,6 @@ class MainActivity : AppCompatActivity() {
             refreshUI(animateEntrance = false)
             Toast.makeText(this, "Note Deleted", Toast.LENGTH_SHORT).show()
             dialog.dismiss()
-        }
-
-        dialog.show()
-    }
-
-    private fun showFullScreenNote(title: String, tag: String, imgPath: String, audioPath: String, index: Int, jsonArray: JSONArray) {
-        val themeKey = ThemeManager.getCurrentThemeKey(this)
-        val themeRes = ThemeManager.getThemeDialogRes(this)
-        val dialog = ComponentDialog(this, themeRes)
-        dialog.setContentView(R.layout.dialog_fullscreen)
-
-        dialog.setCancelable(true)
-        dialog.setCanceledOnTouchOutside(false)
-
-        dialog.window?.let { window ->
-            window.setWindowAnimations(R.style.IosModalAnimation)
-            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            if (themeKey == ThemeManager.THEME_GLASS) {
-                window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                window.setBackgroundDrawable(ColorDrawable(Color.parseColor("#80000000")))
-            }
-
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-
-            WindowCompat.setDecorFitsSystemWindows(window, false)
-            androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
-                hide(WindowInsetsCompat.Type.systemBars())
-                systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-        }
-
-        // Intercept Android 13–16 Predictive Back gestures cleanly inside ComponentDialog so MainActivity never closes!
-        dialog.onBackPressedDispatcher.addCallback(dialog, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                val fullTitle = dialog.findViewById<EditText>(R.id.fsTitle)
-                if (fullTitle?.hasFocus() == true) {
-                    fullTitle.clearFocus()
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.hideSoftInputFromWindow(fullTitle.windowToken, 0)
-                } else {
-                    dialog.dismiss()
-                }
-            }
-        })
-
-        try {
-            val fullImage = dialog.findViewById<ImageView>(R.id.fsImage)
-            val fullTitle = dialog.findViewById<EditText>(R.id.fsTitle)
-            val fullTag = dialog.findViewById<TextView>(R.id.fsTag)
-            val fullPlayBtn = dialog.findViewById<ImageButton>(R.id.fsPlay)
-            val btnDelete = dialog.findViewById<ImageButton>(R.id.fsDelete)
-            val btnClose = dialog.findViewById<ImageButton>(R.id.fsClose)
-            val bottomStack = dialog.findViewById<View>(R.id.fullscreenBottomStack)
-
-            bottomStack?.translationY = 80f
-            bottomStack?.alpha = 0f
-            bottomStack?.animate()
-                ?.translationY(0f)
-                ?.alpha(1f)
-                ?.setStartDelay(100)
-                ?.setDuration(350)
-                ?.setInterpolator(appleOvershoot)
-                ?.start()
-
-            bottomStack?.let { stack ->
-                ViewCompat.setOnApplyWindowInsetsListener(stack) { v, insets ->
-                    val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-                    val sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
-                    val bottomMargin = Math.max(imeHeight, sysBars)
-
-                    val params = v.layoutParams as ViewGroup.MarginLayoutParams
-                    params.bottomMargin = bottomMargin + (16 * resources.displayMetrics.density).toInt()
-                    v.layoutParams = params
-
-                    insets
-                }
-            }
-
-            fullPlayBtn?.addApplePressEffect()
-            btnDelete?.addApplePressEffect()
-            btnClose?.addApplePressEffect()
-
-            val font = getAppTypeface()
-            val accentColor = getAccentColor()
-            val primaryTextColor = ThemeManager.getPrimaryColor(this)
-
-            fullTitle?.typeface = font
-            fullTitle?.setTextColor(primaryTextColor)
-            fullTag?.typeface = font
-            if (fullTag != null) {
-                ThemeManager.applyCategoryBadgeStyle(this, fullTag)
-            }
-            fullPlayBtn?.setColorFilter(accentColor)
-            btnDelete?.setColorFilter(primaryTextColor)
-            btnClose?.setColorFilter(primaryTextColor)
-
-            fullTitle?.setOnFocusChangeListener { _, hasFocus ->
-                if (hasFocus) {
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.showSoftInput(fullTitle, InputMethodManager.SHOW_IMPLICIT)
-                }
-            }
-
-            btnClose?.setOnClickListener { dialog.dismiss() }
-
-            dialog.setOnDismissListener {
-                val newName = fullTitle?.text?.toString()?.trim() ?: ""
-                if (newName.isNotEmpty() && newName != title) {
-                    try {
-                        val noteObj = jsonArray.getJSONObject(index)
-                        noteObj.put("summary", newName)
-                        prefs.edit().putString("notes_array", jsonArray.toString()).apply()
-                        loadDataToMemory()
-                        refreshUI(animateEntrance = false)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
-
-            fullTitle?.setText(title)
-            fullTag?.text = tag
-
-            val screenshotWindowCard = dialog.findViewById<View>(R.id.screenshotWindowCard)
-
-            if (imgPath.isNotEmpty() && java.io.File(imgPath).exists()) {
-                screenshotWindowCard?.visibility = View.VISIBLE
-                val bitmap = BitmapFactory.decodeFile(imgPath)
-                fullImage?.setImageBitmap(bitmap)
-
-                fullImage?.setOnClickListener {
-                    if (fullTitle?.hasFocus() == true) {
-                        dialog.window?.let { win ->
-                            androidx.core.view.WindowInsetsControllerCompat(win, fullTitle).hide(WindowInsetsCompat.Type.ime())
-                        }
-                        fullTitle.clearFocus()
-                    } else {
-                        showZoomableImage(imgPath)
-                    }
-                }
-            }
-
-            fullPlayBtn?.setOnClickListener {
-                if (audioPath.isNotEmpty() && java.io.File(audioPath).exists()) {
-                    playAudioNote(audioPath)
-                } else {
-                    Toast.makeText(this, "No Audio Attached", Toast.LENGTH_SHORT).show()
-                }
-            }
-
-            fullTitle?.setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_DONE) {
-                    val newName = fullTitle.text.toString().trim()
-                    if (newName.isNotEmpty()) {
-                        try {
-                            val noteObj = jsonArray.getJSONObject(index)
-                            noteObj.put("summary", newName)
-
-                            prefs.edit().putString("notes_array", jsonArray.toString()).apply()
-                            loadDataToMemory()
-                            refreshUI(animateEntrance = false)
-
-                            Toast.makeText(this, "Name updated", Toast.LENGTH_SHORT).show()
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }
-
-                    fullTitle.clearFocus()
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.hideSoftInputFromWindow(fullTitle.windowToken, 0)
-                    true
-                } else {
-                    false
-                }
-            }
-
-            val savedTags = prefs.getStringSet("custom_tags", setOf("All", "Work", "Personal")) ?: setOf("All", "Work", "Personal")
-            val dynamicTagArray = savedTags.filter { it != "All" }.toTypedArray()
-
-            fullTag?.setOnClickListener { view ->
-                try {
-                    val noteObj = jsonArray.getJSONObject(index)
-
-                    showCategoryFlyout(
-                        anchorView = view,
-                        noteObj = noteObj,
-                        index = index,
-                        jsonArray = jsonArray,
-                        tagList = dynamicTagArray
-                    )
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-
-            btnDelete?.setOnClickListener {
-                dialog.dismiss()
-                showDeleteNoteDialog(index, jsonArray)
-            }
-
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
 
         dialog.show()
