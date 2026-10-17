@@ -11,7 +11,7 @@ android {
     defaultConfig {
         applicationId = "com.example.essentialspace"
         minSdk = 24
-        targetSdk = 37
+        targetSdk = 34
         versionCode = 4
         versionName = "2.0.0"
 

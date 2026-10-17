@@ -47,29 +47,46 @@ object ThemeManager {
         AppCompatDelegate.setDefaultNightMode(mode)
 
         when (themeKey) {
-            THEME_LIGHT -> {
-                activity.setTheme(R.style.Theme_EssentialSpace)
-                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    activity.window.setBackgroundBlurRadius(0)
+            THEME_LIGHT -> activity.setTheme(R.style.Theme_EssentialSpace)
+            THEME_GLASS -> activity.setTheme(R.style.Theme_EssentialSpace_Glass)
+            else -> activity.setTheme(R.style.Theme_EssentialSpace_PitchBlack)
+        }
+    }
+
+    fun applyWindowFlags(activity: Activity) {
+        val themeKey = getCurrentThemeKey(activity)
+        try {
+            when (themeKey) {
+                THEME_LIGHT -> {
+                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try { activity.window.setBackgroundBlurRadius(0) } catch (_: Throwable) {}
+                    }
+                }
+                THEME_GLASS -> {
+                    activity.window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+                    activity.window.setBackgroundDrawable(ColorDrawable(Color.parseColor("#99000000")))
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            activity.window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                            activity.window.attributes.blurBehindRadius = 50
+                            activity.window.setBackgroundBlurRadius(70)
+                        } catch (_: Throwable) {
+                            // Fallback gracefully on OEMs that disallow runtime window blur
+                        }
+                    }
+                }
+                else -> { // THEME_BLACK
+                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try { activity.window.setBackgroundBlurRadius(0) } catch (_: Throwable) {}
+                    }
                 }
             }
-            THEME_GLASS -> {
-                activity.setTheme(R.style.Theme_EssentialSpace_Glass)
-                activity.window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                // Less transparent (#99000000 = 60% dark scrim) for much better readability over bright wallpapers
-                activity.window.setBackgroundDrawable(ColorDrawable(Color.parseColor("#99000000")))
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    activity.window.setBackgroundBlurRadius(70)
-                }
-            }
-            else -> { // THEME_BLACK
-                activity.setTheme(R.style.Theme_EssentialSpace_PitchBlack)
-                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    activity.window.setBackgroundBlurRadius(0)
-                }
-            }
+        } catch (e: Throwable) {
+            e.printStackTrace()
         }
     }
 
@@ -78,7 +95,9 @@ object ThemeManager {
         val mode = if (themeKey == THEME_LIGHT) AppCompatDelegate.MODE_NIGHT_NO else AppCompatDelegate.MODE_NIGHT_YES
         AppCompatDelegate.setDefaultNightMode(mode)
 
-        val cleanIntent = android.content.Intent(activity, activity::class.java)
+        val cleanIntent = android.content.Intent(activity, activity::class.java).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
         activity.finish()
         activity.startActivity(cleanIntent)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -304,14 +323,14 @@ object ThemeManager {
         val textColorSecondary: Int
         val colorSurfaceVariant: Int
 
+        applyWindowFlags(activity)
+
         when (themeKey) {
             THEME_LIGHT -> {
                 colorBackground = Color.parseColor("#F2F4F7")
                 textColorPrimary = Color.parseColor("#121316")
                 textColorSecondary = Color.parseColor("#5C6270")
                 colorSurfaceVariant = Color.parseColor("#E8ECF2")
-                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                activity.window.setBackgroundDrawable(ColorDrawable(colorBackground))
             }
             THEME_GLASS -> {
                 // Less transparent (#99000000 = 60% dark scrim) for much better card & text contrast
@@ -319,19 +338,12 @@ object ThemeManager {
                 textColorPrimary = Color.WHITE
                 textColorSecondary = Color.parseColor("#E6E6E6")
                 colorSurfaceVariant = Color.parseColor("#E6161920")
-                activity.window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                activity.window.setBackgroundDrawable(ColorDrawable(colorBackground))
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    activity.window.setBackgroundBlurRadius(70)
-                }
             }
             else -> { // THEME_BLACK
                 colorBackground = Color.BLACK
                 textColorPrimary = Color.parseColor("#F0F2F5")
                 textColorSecondary = Color.parseColor("#98A2B3")
                 colorSurfaceVariant = Color.parseColor("#121212")
-                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
-                activity.window.setBackgroundDrawable(ColorDrawable(colorBackground))
             }
         }
 

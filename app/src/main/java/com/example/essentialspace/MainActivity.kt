@@ -142,9 +142,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
+        prefs = ThemeManager.getPrefs(this)
+        ThemeManager.initActivityTheme(this)
         super.onCreate(savedInstanceState)
 
-        // Must be called AFTER super.onCreate() so installSplashScreen() doesn't overwrite the theme!
+        // Re-apply window flags after super.onCreate() so SplashScreen doesn't clear them
+        ThemeManager.applyWindowFlags(this)
         prefs = ThemeManager.getPrefs(this)
         ThemeManager.initActivityTheme(this)
 
@@ -155,27 +158,31 @@ class MainActivity : AppCompatActivity() {
 
         val topBar = findViewById<RelativeLayout>(R.id.topBar)
         val bottomDockContainer = findViewById<LinearLayout>(R.id.bottomDockContainer)
+        val contentRoot = findViewById<View>(android.R.id.content)
 
-        ViewCompat.setOnApplyWindowInsetsListener(window.decorView.rootView) { _, windowInsets ->
-            val sysBars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
-            val bottomInset = Math.max(sysBars.bottom, ime.bottom)
-            val density = resources.displayMetrics.density
+        if (contentRoot != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(contentRoot) { _, windowInsets ->
+                val sysBars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+                val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
+                val bottomInset = Math.max(sysBars.bottom, ime.bottom)
+                val density = resources.displayMetrics.density
 
-            val topParams = topBar.layoutParams as ViewGroup.MarginLayoutParams
-            topParams.topMargin = sysBars.top + (8 * density).toInt()
-            topBar.layoutParams = topParams
+                (topBar?.layoutParams as? ViewGroup.MarginLayoutParams)?.let { topParams ->
+                    topParams.topMargin = sysBars.top + (8 * density).toInt()
+                    topBar.layoutParams = topParams
+                }
 
-            val pad16 = (16 * density).toInt()
-            topBar.setPadding(pad16, 0, pad16, 0)
+                val pad16 = (16 * density).toInt()
+                topBar?.setPadding(pad16, 0, pad16, 0)
 
-            bottomDockContainer.setPadding(0, 0, 0, bottomInset)
+                bottomDockContainer?.setPadding(0, 0, 0, bottomInset)
 
-            val topBarTotalHeight = sysBars.top + (52 * density).toInt() + (8 * density).toInt() + (12 * density).toInt()
-            val mainScrollView = findViewById<ScrollView>(R.id.mainScrollView)
-            mainScrollView?.setPadding(0, topBarTotalHeight, 0, bottomInset + (90 * density).toInt())
+                val topBarTotalHeight = sysBars.top + (52 * density).toInt() + (8 * density).toInt() + (12 * density).toInt()
+                val mainScrollView = findViewById<ScrollView>(R.id.mainScrollView)
+                mainScrollView?.setPadding(0, topBarTotalHeight, 0, bottomInset + (90 * density).toInt())
 
-            WindowInsetsCompat.CONSUMED
+                windowInsets
+            }
         }
 
         loadDataToMemory()

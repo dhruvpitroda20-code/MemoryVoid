@@ -36,9 +36,10 @@
 
     <!-- Frosted Glass Theme (Wallpaper Transparency) -->
     <style name="Theme.EssentialSpace.Glass" parent="Theme.EssentialSpace">
+        <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowShowWallpaper">true</item>
-        <item name="android:colorBackground">#A1000000</item>
-        <item name="android:windowBackground">#A1000000</item>
+        <item name="android:colorBackground">#99000000</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
 
         <item name="colorSurface">#D1161920</item>
         <item name="colorSurfaceVariant">#E012141A</item>

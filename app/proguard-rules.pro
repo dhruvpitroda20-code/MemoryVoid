@@ -16,3 +16,18 @@
 # Keep Kotlin standard library classes to prevent invalid cross-package class merging/repackaging
 -keep class kotlin.** { *; }
 -keep class kotlinx.** { *; }
+# Keep all classes, methods, and fields in MemoryVoid / EssentialSpace
+-keep class com.example.essentialspace.** { *; }
+-keep interface com.example.essentialspace.** { *; }
+-dontwarn com.example.essentialspace.**
+
+# Keep PhotoView, SwipeRefreshLayout, and Material components intact
+-keep class com.github.chrisbanes.photoview.** { *; }
+-keep class com.google.android.material.** { *; }
+-keep class androidx.** { *; }
+
+# Keep standard Android components
+-keep public class * extends android.app.Activity
+-keep public class * extends android.app.Service
+-keep public class * extends android.accessibilityservice.AccessibilityService
+-keep public class * extends android.content.BroadcastReceiver
