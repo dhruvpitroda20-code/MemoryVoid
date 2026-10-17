@@ -18,4 +18,21 @@
         <item name="elevationOverlayEnabled">false</item>
         <item name="android:fontFamily">sans-serif</item>
     </style>
+
+    <!-- Frosted Glass Theme (Night Override) -->
+    <style name="Theme.EssentialSpace.Glass" parent="Theme.EssentialSpace">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:colorBackground">#99000000</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+
+        <item name="colorSurface">#D1161920</item>
+        <item name="colorSurfaceVariant">#E012141A</item>
+        <item name="colorSecondaryContainer">#E620242E</item>
+
+        <item name="android:textColorPrimary">#FFFFFF</item>
+        <item name="android:textColorSecondary">#E6E6E6</item>
+        <item name="android:textColorTertiary">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>
